@@ -63,31 +63,29 @@ async function example() {
 }
 ```
 
-### Transaction Building (Coming Soon)
+### Transaction Building
 
 ```typescript
-import { TransactionBuilder, LightWallet } from '@blondfrogs/veil-wasm-wrapper';
+import { initWasm, createWallet, TransactionBuilder } from '@blondfrogs/veil-wasm-wrapper';
 
 async function sendVeil() {
-  // Create wallet from mnemonic
-  const wallet = await LightWallet.fromMnemonic(
-    'your twelve word mnemonic here'
-  );
+  await initWasm();
+
+  // Create or restore wallet
+  const wallet = createWallet();
+  console.log('Address:', wallet.stealthAddress);
 
   // Build transaction
   const txBuilder = new TransactionBuilder(wallet);
-  const tx = await txBuilder.buildRingCTTransaction({
-    recipients: [{
-      address: 'sv1qqxxx...',  // Stealth address
-      amount: 100_000_000n,     // 1 VEIL
-    }],
-    fee: 10_000n,
-    ringSize: 11,
-  });
+  const result = await txBuilder.send(
+    wallet.spendSecret,
+    wallet.scanSecret,
+    [{ address: 'sv1qqxxx...', amount: 100_000_000n }], // 1 VEIL
+    myUTXOs
+  );
 
-  // Broadcast
-  const txid = await txBuilder.sendTransaction(tx);
-  console.log('Transaction sent:', txid);
+  console.log('Transaction ID:', result.txid);
+  console.log('Fee:', result.fee);
 }
 ```
 
@@ -95,108 +93,42 @@ async function sendVeil() {
 
 ## 📚 API Reference
 
-### Initialization
+**See [API.md](./API.md) for complete documentation.**
 
-```typescript
-initWasm(wasmPath?: string): Promise<VeilWasm>
-```
+Quick reference:
 
-Initialize the WASM module. Must be called before using any crypto functions.
+### Wallet Management
+- `createWallet()` - Create new wallet
+- `restoreWallet()` - Restore from keys
+- `validateAddress()` - Validate stealth addresses
 
-### Commitments
+### Transaction Building
+- `TransactionBuilder` - Build RingCT transactions
+- `fetchDecoyOutputs()` - Get decoys for ring signatures
 
-```typescript
-createCommitment(value: bigint, blind: Uint8Array): Commitment
+### Scanning
+- `scanTransaction()` - Scan for your outputs
+- `parseWatchOnlyTransactions()` - Parse watch-only RPC data
 
-sumBlinds(blinds: Uint8Array[], nPositive: number): Uint8Array
-```
+### RPC Client
+- `RpcRequester` - Interact with Veil nodes
+- `checkKeyImages()` - Check spent status
 
-Create Pedersen commitments and sum blinding factors.
-
-### Range Proofs
-
-```typescript
-generateRangeProof(params: {
-  commitment: Commitment;
-  value: bigint;
-  blind: Uint8Array;
-  nonce: Uint8Array;
-  message?: Uint8Array;
-}): { proof: Uint8Array; ... }
-
-verifyRangeProof(
-  commitment: Commitment,
-  proof: Uint8Array
-): { minValue: bigint; maxValue: bigint }
-
-rewindRangeProof(
-  nonce: Uint8Array,
-  commitment: Commitment,
-  proof: Uint8Array
-): { blind: Uint8Array; value: bigint; ... }
-```
-
-Generate, verify, and rewind range proofs.
-
-### Key Images
-
-```typescript
-generateKeyImage(
-  pk: PublicKey,
-  sk: SecretKey
-): KeyImage
-```
-
-Generate a key image for preventing double-spending.
-
-### Utilities
-
-```typescript
-// Amount conversion
-veilToSatoshis(veil: number): bigint
-satoshisToVeil(satoshis: bigint): number
-formatAmount(satoshis: bigint): string
-
-// Hex conversion
-hexToBytes(hex: string): Uint8Array
-bytesToHex(bytes: Uint8Array): string
-
-// Address validation
-isValidStealthAddress(address: string): boolean
-```
+### Cryptography
+- `createCommitment()` - Pedersen commitments
+- `generateRangeProof()` - Bulletproofs
+- `rewindRangeProof()` - Extract values
+- `generateKeyImage()` - Prevent double-spending
 
 ---
 
-## 🏗️ Project Structure
+## 🧪 Examples
 
-```
-veil-tx-builder/
-├── src/
-│   ├── index.ts              # Main exports
-│   ├── types.ts              # TypeScript type definitions
-│   ├── utils.ts              # Utility functions
-│   ├── wasm.ts               # WASM interface wrapper
-│   ├── TransactionBuilder.ts # (Coming soon)
-│   ├── Wallet.ts             # (Coming soon)
-│   └── RpcClient.ts          # (Coming soon)
-├── examples/
-│   ├── minimal-example.js    # Basic usage
-│   └── browser-example.html  # (Coming soon)
-├── tests/                    # Unit tests
-└── dist/                     # Compiled output
-```
-
----
-
-## 🧪 Running Examples
-
-```bash
-# Minimal example (demonstrates WASM integration)
-npm run example:minimal
-
-# Browser example (coming soon)
-npm run example:browser
-```
+See the [examples/](./examples/) directory for complete working examples:
+- `create-wallet.ts` - Wallet creation
+- `build-transaction.ts` - Transaction building
+- `scan-outputs.ts` - Blockchain scanning
+- `blockchain-integration.ts` - RPC usage
 
 ---
 
@@ -223,58 +155,17 @@ npm run lint
 
 ---
 
-## 📋 Roadmap
-
-### ✅ Phase 1: Foundation (Complete)
-- [x] Project structure
-- [x] TypeScript types
-- [x] WASM wrapper interface
-- [x] Utility functions
-- [x] Basic examples
-
-### 🚧 Phase 2: Transaction Building (In Progress)
-- [ ] Port coin selection from Dart
-- [ ] Port transaction builder logic
-- [ ] Stealth address encoding/decoding
-- [ ] MLSAG integration
-
-### 📋 Phase 3: Wallet Management
-- [ ] HD wallet (BIP32/BIP39)
-- [ ] UTXO tracking
-- [ ] Balance calculation
-- [ ] Transaction history
-
-### 📋 Phase 4: Integration
-- [ ] RPC client for Veil node
-- [ ] Browser compatibility testing
-- [ ] NPM package publishing
-- [ ] Documentation site
-
----
-
 ## ⚠️ Security Warning
 
-**⚠️ NOT PRODUCTION READY ⚠️**
+**⚠️ USE AT YOUR OWN RISK ⚠️**
 
-This library is in active development and has not been audited. Do not use with real funds.
-
-**Pending before production:**
-- ❌ Security audit
-- ❌ Extensive testing
-- ❌ Performance optimization
-- ❌ Browser compatibility testing
+This library has not been formally audited. Use caution with real funds.
 
 ---
 
 ## 🤝 Contributing
 
-Contributions welcome! Please fork, create a feature branch, and submit a pull request.
-
-**Areas needing help:**
-1. Transaction builder porting from Dart
-2. Stealth address bech32 encoding
-3. RPC client implementation
-4. Testing and documentation
+Contributions welcome! Please open an issue or submit a pull request.
 
 ---
 
@@ -286,15 +177,10 @@ MIT License - See LICENSE file for details
 
 ## 🔗 Links
 
-- **Crypto Library**: [@blondfrogs/secp256k1-wasm](https://github.com/blondfrogs/veil-secp256k1-wasm)
-<!-- MLSAG implementation details are in the crypto library repo -->
+- **Crypto Library**: [@blondfrogs/secp256k1-wasm](https://www.npmjs.com/package/@blondfrogs/secp256k1-wasm)
 - **Veil Project**: https://veil-project.com/
 - **Discord**: https://discord.veil-project.com/
 
 ---
-
-**Last Updated**: October 24, 2025
-**Status**: 🚧 In Development
-**Version**: 0.1.0-alpha
 
 Built with 🦀 Rust + TypeScript for the Veil community
