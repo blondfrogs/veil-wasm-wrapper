@@ -1,0 +1,57 @@
+{
+  "name": "@blondfrogs/veil-wasm-wrapper",
+  "version": "1.0.0",
+  "description": "TypeScript wrapper for Veil blockchain - transaction builder, wallet management, and RPC client using WASM cryptography",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src --ext .ts",
+    "example": "ts-node",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "veil",
+    "blockchain",
+    "cryptocurrency",
+    "ringct",
+    "privacy",
+    "transaction",
+    "wasm",
+    "stealth-addresses",
+    "pedersen",
+    "mlsag"
+  ],
+  "author": "Veil Project, blondfrogs",
+  "license": "MIT",
+  "dependencies": {
+    "@blondfrogs/secp256k1-wasm": "^1.1.1",
+    "bip32": "^4.0.0",
+    "bip39": "^3.1.0",
+    "buffer": "^6.0.3"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "serve": "^14.0.0",
+    "ts-jest": "^29.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/blondfrogs/veil-wasm-tx-builder.git"
+  },
+  "homepage": "https://github.com/blondfrogs/veil-wasm-tx-builder"
+}
