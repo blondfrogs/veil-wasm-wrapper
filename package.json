@@ -1,6 +1,6 @@
 {
   "name": "@blondfrogs/veil-wasm-wrapper",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "TypeScript wrapper for Veil blockchain - transaction builder, wallet management, and RPC client using WASM cryptography",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
