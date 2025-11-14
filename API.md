@@ -161,7 +161,68 @@ if (statuses[0].spent) {
 const decoys = await fetchDecoyOutputs(11, 2);
 ```
 
-### Scanning
+### Balance & Scanning
+
+#### `getBalance(spendSecret, scanSecret, rpc?, options?): Promise<BalanceResult>`
+
+✅ **Recommended** - Get wallet balance in a single call with caching and pagination support.
+
+**Features:**
+- Memory-efficient chunked processing for large wallets
+- Automatic pagination (fetches and processes 1000 transactions at a time)
+- Caching support to skip re-scanning known spent outputs
+- Optional streaming callback for real-time UI updates
+- Resumable scanning with `startIndex` parameter
+
+```typescript
+// Simple usage - scan entire wallet
+const result = await getBalance(wallet.spendSecret, wallet.scanSecret);
+console.log('Balance:', satoshisToVeil(result.totalBalance), 'VEIL');
+console.log('UTXOs:', result.utxos.length);
+
+// With caching - resume from last scan
+const result2 = await getBalance(wallet.spendSecret, wallet.scanSecret, undefined, {
+  startIndex: result.lastProcessedIndex,
+  knownSpentKeyImages: result.spentKeyImages
+});
+
+// With streaming callback for large wallets
+const result3 = await getBalance(wallet.spendSecret, wallet.scanSecret, undefined, {
+  onUtxoDiscovered: async (utxos) => {
+    console.log(`Found ${utxos.length} unspent UTXOs in this batch`);
+    // Update UI, save to database, etc.
+  }
+});
+```
+
+**Options:**
+```typescript
+interface GetBalanceOptions {
+  // Skip RPC checks for known spent key images (for caching)
+  knownSpentKeyImages?: Set<string> | string[];
+
+  // Resume scanning from this index (from previous result.lastProcessedIndex)
+  startIndex?: number;
+
+  // Number of key images per RPC batch (default: 1000)
+  keyImageBatchSize?: number;
+
+  // Callback invoked with each batch of discovered unspent UTXOs
+  onUtxoDiscovered?: (utxos: ParsedUTXO[]) => void | Promise<void>;
+}
+```
+
+**Returns:**
+```typescript
+interface BalanceResult {
+  totalBalance: bigint;           // Total balance in satoshis
+  utxos: UTXO[];                  // All unspent UTXOs
+  lastProcessedIndex: number;     // Use for next call's startIndex
+  spentKeyImages: string[];       // Cache for next call's knownSpentKeyImages
+  totalOutputsScanned: number;    // Stats
+  ownedOutputsFound: number;      // Stats
+}
+```
 
 #### `scanTransaction(tx, scanSecret, spendPubkey): UTXO[]`
 
@@ -183,7 +244,7 @@ console.log('Balance:', satoshisToVeil(balance), 'VEIL');
 
 #### `parseWatchOnlyTransactions(data, scanSecret, spendPubkey): ParsedUTXO[]`
 
-Parse transactions from `getwatchonlytxes` RPC call.
+⚠️ **Advanced** - Parse transactions from `getwatchonlytxes` RPC call. Most users should use `getBalance()` instead.
 
 ```typescript
 const rpcData = await RpcRequester.getWatchOnlyTxes(scanKeyHex);

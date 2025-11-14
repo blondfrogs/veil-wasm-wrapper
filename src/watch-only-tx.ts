@@ -356,6 +356,7 @@ export interface ParsedUTXO {
 export interface TransactionMetadata {
   amount?: string | number | bigint; // Can be string from JSON
   blind?: string | Uint8Array; // Can be hex string from JSON
+  ringctIndex?: number; // RingCT index from RPC (global output index)
   [key: string]: any; // Allow other fields
 }
 
@@ -456,6 +457,9 @@ export async function parseWatchOnlyTransactions(
         // console.warn(`  3. Manually add amount/blind to wallet file`);
       }
 
+      // Prefer ringctIndex from metadata (RPC), fallback to parsed tx value
+      const ringctIndex = txMetadata?.ringctIndex ?? tx.getRingCtIndex();
+
       utxos.push({
         txid: txId,
         vout,
@@ -465,7 +469,7 @@ export async function parseWatchOnlyTransactions(
         pubkey,
         ephemeralPubkey,
         keyImage,
-        ringctIndex: tx.getRingCtIndex(),
+        ringctIndex,
       });
     } catch (error) {
       console.error(`Error parsing transaction: ${error}`);

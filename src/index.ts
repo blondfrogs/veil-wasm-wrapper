@@ -110,3 +110,10 @@ export {
   type ParsedUTXO,
   type TransactionMetadata,
 } from './watch-only-tx';
+
+export {
+  getBalance,
+  type GetBalanceOptions,
+  type BalanceResult,
+  type OnUtxoCallback,
+} from './balance';

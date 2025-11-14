@@ -56,13 +56,16 @@ If you're new to RingCT and want to understand the fundamentals, follow this seq
 | **complete-wallet-guide.ts** ⭐ | **Everything you need for production** |
 | **create-wallet.ts** | One-line wallet creation and restoration |
 | **validate-address.ts** | Validate addresses before sending |
+| **get-balance.ts** | Get wallet balance with caching support |
+| **get-balance-with-callback.ts** | Stream UTXO discovery in real-time |
 
 ## 💡 Recommended Reading Order
 
 ### If you're building a wallet:
 1. Read **`complete-wallet-guide.ts`** (complete reference)
-2. Check **`create-wallet.ts`** and **`validate-address.ts`** for specific features
-3. Look at **`end-to-end-test.ts`** to see testing patterns
+2. Check **`get-balance.ts`** for efficient balance retrieval with caching
+3. Check **`create-wallet.ts`** and **`validate-address.ts`** for specific features
+4. Look at **`end-to-end-test.ts`** to see testing patterns
 
 ### If you're learning RingCT:
 1. Start with **`generate-keys.ts`**
