@@ -85,6 +85,10 @@ export interface VeilWasm {
     psHex: string
   ): string; // Returns JSON
 
+  // ECDSA Signing (for CT inputs)
+  ecdsaSign(messageHash: Uint8Array, secretKey: Uint8Array): Uint8Array;
+  ecdsaSignCompact(messageHash: Uint8Array, secretKey: Uint8Array): Uint8Array;
+
   // Utilities
   hashSha256(data: Uint8Array): Uint8Array;
   hashKeccak256(data: Uint8Array): Uint8Array;
@@ -538,6 +542,49 @@ export function verifyMlsag(params: {
     // Re-throw with more context
     throw new Error(`MLSAG verification failed: ${errorMsg}`);
   }
+}
+
+// ============================================================================
+// ECDSA Signing (for CT inputs)
+// ============================================================================
+
+/**
+ * Sign a message hash with ECDSA
+ *
+ * ⚠️ **For CT Inputs** - Used when spending CT (Confidential Transaction) outputs.
+ *
+ * CT outputs use standard Bitcoin-style scriptPubKey and are spent with ECDSA
+ * signatures, unlike RingCT outputs which use MLSAG ring signatures.
+ *
+ * @param messageHash - 32-byte sighash to sign
+ * @param secretKey - 32-byte private key
+ * @returns DER-encoded ECDSA signature
+ *
+ * @example
+ * ```typescript
+ * // Compute sighash for the input
+ * const sighash = computeCTSighash(tx, inputIndex, scriptPubKey, commitment);
+ * // Sign with the derived private key
+ * const signature = ecdsaSign(sighash, privateKey);
+ * // Append SIGHASH_ALL byte
+ * const sigWithHashType = concatBytes(signature, new Uint8Array([0x01]));
+ * ```
+ */
+export function ecdsaSign(messageHash: Uint8Array, secretKey: SecretKey): Uint8Array {
+  const wasm = getWasm();
+  return wasm.ecdsaSign(messageHash, secretKey);
+}
+
+/**
+ * Sign a message hash with ECDSA and return compact format
+ *
+ * @param messageHash - 32-byte hash to sign
+ * @param secretKey - 32-byte private key
+ * @returns 64-byte compact signature (r || s)
+ */
+export function ecdsaSignCompact(messageHash: Uint8Array, secretKey: SecretKey): Uint8Array {
+  const wasm = getWasm();
+  return wasm.ecdsaSignCompact(messageHash, secretKey);
 }
 
 // ============================================================================

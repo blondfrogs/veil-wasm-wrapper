@@ -58,6 +58,8 @@ If you're new to RingCT and want to understand the fundamentals, follow this seq
 | **validate-address.ts** | Validate addresses before sending |
 | **get-balance.ts** | Get wallet balance with caching support |
 | **get-balance-with-callback.ts** | Stream UTXO discovery in real-time |
+| **ct-scan-balance.ts** | Scan for CT (Confidential Transaction) outputs |
+| **ct-to-ringct.ts** | Convert CT outputs to RingCT for enhanced privacy |
 
 ## 💡 Recommended Reading Order
 
@@ -77,6 +79,27 @@ If you're new to RingCT and want to understand the fundamentals, follow this seq
    - `blockchain-integration.ts`
 3. Test with **`end-to-end-test.ts`**
 4. See the production API in **`complete-wallet-guide.ts`**
+
+## 🔄 CT (Confidential Transaction) Support
+
+Veil supports two types of private outputs:
+- **RingCT** - Ring signatures with MLSAG (most private)
+- **CT (Stealth)** - ECDSA signatures with P2PKH scripts (legacy)
+
+If you have CT outputs, use these examples to work with them:
+
+| Example | Description |
+|---------|-------------|
+| **ct-scan-balance.ts** | Scan for CT outputs and check balance |
+| **ct-to-ringct.ts** | Convert CT outputs to RingCT for better privacy |
+
+```bash
+# Scan for CT balance
+SPEND_SECRET=<hex> SCAN_SECRET=<hex> npx tsx examples/ct-scan-balance.ts
+
+# Convert CT to RingCT
+SPEND_SECRET=<hex> SCAN_SECRET=<hex> STEALTH_ADDRESS=<addr> npx tsx examples/ct-to-ringct.ts
+```
 
 ## 🏃 Running Examples
 

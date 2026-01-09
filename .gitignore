@@ -36,3 +36,6 @@ yarn-error.log*
 # Sensitive test data
 test-wallet.json
 *wallet*.json
+
+# Generated transaction files
+*.hex

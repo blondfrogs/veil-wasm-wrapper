@@ -7,7 +7,7 @@
 
 import { BufferReader } from './buffer-reader';
 import { generateKeyImage, performEcdh, rewindRangeProof, privateAdd, getWasm } from './wasm';
-import { sha256, derivePublicKey } from './crypto';
+import { sha256, derivePublicKey, hash160 } from './crypto';
 import { hexToBytes, bytesToHex } from './utils';
 import { debug } from './debug';
 
@@ -18,6 +18,134 @@ export enum WatchOnlyTxType {
   NOTSET = -1,
   STEALTH = 0,
   ANON = 1,
+}
+
+/**
+ * CT (Confidential Transaction) output data
+ *
+ * CT outputs have a scriptPubKey (like regular Bitcoin P2PKH) instead of just a pubkey.
+ * They use ECDSA signatures for spending, not ring signatures.
+ */
+export class CTxOutCT {
+  private commitment?: Uint8Array;
+  private vData?: Uint8Array;
+  private scriptPubKey?: Uint8Array;
+  private vRangeproof?: Uint8Array;
+  private vchEphemPK?: Uint8Array;
+
+  private nAmount?: bigint;
+  private blind?: Uint8Array;
+  private derivedPubkey?: Uint8Array;
+
+  /**
+   * Deserialize CT output from buffer
+   *
+   * Format (from Veil Core):
+   * - commitment (33 bytes)
+   * - vData (varlen, first 33 bytes is ephemeral pubkey)
+   * - scriptPubKey (varlen)
+   * - vRangeproof (varlen)
+   */
+  deserialize(buffer: Uint8Array): void {
+    const reader = new BufferReader(buffer);
+
+    // Read commitment (33 bytes)
+    this.commitment = reader.readSlice(33);
+
+    // Read vData (variable length)
+    this.vData = reader.readVarSlice();
+
+    // Read scriptPubKey (variable length)
+    this.scriptPubKey = reader.readVarSlice();
+
+    // Read range proof (variable length)
+    this.vRangeproof = reader.readVarSlice();
+
+    // Extract ephemeral public key from vData (first 33 bytes)
+    if (this.vData && this.vData.length >= 33) {
+      this.vchEphemPK = this.vData.slice(0, 33);
+    }
+  }
+
+  /**
+   * Decode CT transaction to extract amount and blind
+   *
+   * @param spendSecret - Spend private key
+   * @param scanSecret - Scan private key
+   */
+  async decodeTx(spendSecret: Uint8Array, scanSecret: Uint8Array): Promise<void> {
+    if (!this.vchEphemPK || !this.commitment || !this.vRangeproof) {
+      throw new Error('CT Transaction not deserialized');
+    }
+
+    try {
+      // Derive spend public key
+      const spendPubkey = derivePublicKey(spendSecret);
+      debug('[decodeCTTx] Spend pubkey derived');
+
+      // Compute stealth shared secret
+      // sShared = SHA256(scan_secret * ephemeral_pubkey)
+      const sShared = performEcdh(this.vchEphemPK, scanSecret);
+      debug('[decodeCTTx] ECDH shared secret:', sShared.length, 'bytes');
+
+      // Derive destination private key
+      const destinationKeyPriv = privateAdd(spendSecret, sShared);
+      debug('[decodeCTTx] Destination key derived');
+
+      // Derive destination public key (for reference)
+      this.derivedPubkey = derivePublicKey(destinationKeyPriv);
+      debug('[decodeCTTx] Derived pubkey:', bytesToHex(this.derivedPubkey).slice(0, 40) + '...');
+
+      // For CT, verify the scriptPubKey matches the derived pubkey
+      // P2PKH: OP_DUP OP_HASH160 <hash160(pubkey)> OP_EQUALVERIFY OP_CHECKSIG
+      if (this.scriptPubKey && this.scriptPubKey.length === 25) {
+        // Extract pubkey hash from script (bytes 3-23)
+        const scriptPubkeyHash = this.scriptPubKey.slice(3, 23);
+
+        // Compute hash160 of derived pubkey
+        const derivedHash = await hash160(this.derivedPubkey);
+
+        if (bytesToHex(scriptPubkeyHash) !== bytesToHex(derivedHash)) {
+          throw new Error('Derived pubkey hash does not match scriptPubKey - transaction not for this wallet');
+        }
+        debug('[decodeCTTx] ✅ ScriptPubKey verified');
+      }
+
+      // Perform ECDH for range proof nonce (double SHA256 like RingCT)
+      const wasm = getWasm();
+      const ecdhResult = performEcdh(this.vchEphemPK, destinationKeyPriv);
+      const nonceHashed = wasm.hashSha256(ecdhResult);
+      debug('[decodeCTTx] Nonce from ECDH (double SHA256):', nonceHashed.length, 'bytes');
+
+      // Try to rewind range proof
+      try {
+        const rewound = rewindRangeProof(nonceHashed, this.commitment, this.vRangeproof);
+        if (rewound) {
+          this.nAmount = rewound.value;
+          this.blind = rewound.blind;
+          debug('[decodeCTTx] ✅ Range proof rewound! Amount:', this.nAmount);
+        }
+      } catch (rewindError: any) {
+        debug('[decodeCTTx] Range proof rewind failed:', rewindError.message);
+      }
+    } catch (error: any) {
+      throw error;
+    }
+  }
+
+  // Getters
+  getCommitment(): Uint8Array | undefined { return this.commitment; }
+  getScriptPubKey(): Uint8Array | undefined { return this.scriptPubKey; }
+  getVCHEphemPK(): Uint8Array | undefined { return this.vchEphemPK; }
+  getVData(): Uint8Array | undefined { return this.vData; }
+  getRangeProof(): Uint8Array | undefined { return this.vRangeproof; }
+  getAmount(): bigint | undefined { return this.nAmount; }
+  getBlind(): Uint8Array | undefined { return this.blind; }
+  getDerivedPubkey(): Uint8Array | undefined { return this.derivedPubkey; }
+
+  // Setters
+  setAmount(amount: bigint): void { this.nAmount = amount; }
+  setBlind(blind: Uint8Array): void { this.blind = blind; }
 }
 
 /**
@@ -192,6 +320,7 @@ export class CWatchOnlyTx {
   private txHashHex?: string;
   private txIndex?: number;
   private ringctout?: CTxOutRingCT;
+  private ctout?: CTxOutCT;
 
   /**
    * Deserialize watch-only transaction from buffer
@@ -225,12 +354,16 @@ export class CWatchOnlyTx {
     // Read transaction index
     this.txIndex = reader.readUInt32();
 
-    // If ANON type, deserialize RingCT output
+    // Deserialize output based on type
+    const remainingBuffer = buffer.slice(reader.getOffset());
     if (this.type === WatchOnlyTxType.ANON) {
       const ctxOut = new CTxOutRingCT();
-      const remainingBuffer = buffer.slice(reader.getOffset());
       ctxOut.deserialize(remainingBuffer);
       this.ringctout = ctxOut;
+    } else if (this.type === WatchOnlyTxType.STEALTH) {
+      const ctxOut = new CTxOutCT();
+      ctxOut.deserialize(remainingBuffer);
+      this.ctout = ctxOut;
     }
   }
 
@@ -270,6 +403,10 @@ export class CWatchOnlyTx {
 
   getRingCtOut(): CTxOutRingCT | undefined {
     return this.ringctout;
+  }
+
+  getCTOut(): CTxOutCT | undefined {
+    return this.ctout;
   }
 
   getId(): string {
@@ -335,7 +472,7 @@ export class CWatchOnlyTxWithIndex extends CWatchOnlyTx {
 }
 
 /**
- * Parsed UTXO from watch-only transaction
+ * Parsed UTXO from watch-only transaction (RingCT)
  */
 export interface ParsedUTXO {
   txid: string;
@@ -347,6 +484,23 @@ export interface ParsedUTXO {
   ephemeralPubkey: Uint8Array;
   keyImage: Uint8Array;
   ringctIndex?: number;
+}
+
+/**
+ * Parsed CT UTXO from watch-only transaction (Stealth/CT)
+ *
+ * CT outputs have scriptPubKey instead of just pubkey, and no keyImage
+ * (they use ECDSA signatures, not ring signatures)
+ */
+export interface ParsedUTXO_CT {
+  txid: string;
+  vout: number;
+  amount: bigint;
+  commitment: Uint8Array;
+  blind: Uint8Array;
+  scriptPubKey: Uint8Array;
+  pubkey: Uint8Array; // Derived pubkey for this output
+  ephemeralPubkey: Uint8Array;
 }
 
 /**
@@ -473,6 +627,112 @@ export async function parseWatchOnlyTransactions(
       });
     } catch (error) {
       console.error(`Error parsing transaction: ${error}`);
+      // Continue with next transaction
+    }
+  }
+
+  return utxos;
+}
+
+/**
+ * Parse watch-only CT (stealth) transactions into UTXOs
+ *
+ * @param transactions - Array of raw transaction hex strings from getwatchonlytxes
+ * @param spendSecret - Spend private key
+ * @param scanSecret - Scan private key
+ * @param metadata - Optional array of metadata for each transaction
+ * @returns Array of parsed CT UTXOs
+ */
+export async function parseWatchOnlyTransactionsCT(
+  transactions: string[],
+  spendSecret: Uint8Array,
+  scanSecret: Uint8Array,
+  metadata?: TransactionMetadata[]
+): Promise<ParsedUTXO_CT[]> {
+  const utxos: ParsedUTXO_CT[] = [];
+
+  for (let i = 0; i < transactions.length; i++) {
+    const rawTx = transactions[i];
+    const txMetadata = metadata?.[i];
+
+    try {
+      // Deserialize transaction
+      const tx = new CWatchOnlyTxWithIndex();
+      tx.deserializeFromHex(rawTx);
+
+      // Only process STEALTH (CT) transactions
+      if (tx.getType() !== WatchOnlyTxType.STEALTH) {
+        continue;
+      }
+
+      // Get CT output
+      const ctOut = tx.getCTOut();
+      if (!ctOut) {
+        continue;
+      }
+
+      // Decode transaction to extract amount, blind
+      await ctOut.decodeTx(spendSecret, scanSecret);
+
+      // If metadata provides amount/blind, use those
+      if (txMetadata?.amount !== undefined) {
+        const amount = typeof txMetadata.amount === 'string'
+          ? BigInt(txMetadata.amount)
+          : BigInt(txMetadata.amount);
+        ctOut.setAmount(amount);
+        debug('[parseWatchOnlyTransactionsCT] Using amount from RPC metadata:', amount);
+      }
+
+      if (txMetadata?.blind !== undefined) {
+        const blind = typeof txMetadata.blind === 'string'
+          ? hexToBytes(txMetadata.blind)
+          : txMetadata.blind;
+        ctOut.setBlind(blind);
+        debug('[parseWatchOnlyTransactionsCT] Using blind from RPC metadata');
+      }
+
+      // Extract UTXO data
+      const amount = ctOut.getAmount();
+      const commitment = ctOut.getCommitment();
+      const blind = ctOut.getBlind();
+      const scriptPubKey = ctOut.getScriptPubKey();
+      const pubkey = ctOut.getDerivedPubkey();
+      const ephemeralPubkey = ctOut.getVCHEphemPK();
+
+      // Log what we have
+      const txId = tx.getId();
+      const vout = tx.getTxIndex() || 0;
+      debug(`[parseWatchOnlyTransactionsCT] TX ${txId}:${vout}`);
+      debug(`  - amount: ${amount ? '✅' : '❌ MISSING'}`);
+      debug(`  - commitment: ${commitment ? '✅' : '❌'}`);
+      debug(`  - blind: ${blind ? '✅' : '❌ MISSING'}`);
+      debug(`  - scriptPubKey: ${scriptPubKey ? '✅' : '❌'}`);
+      debug(`  - pubkey: ${pubkey ? '✅' : '❌'}`);
+      debug(`  - ephemeralPubkey: ${ephemeralPubkey ? '✅' : '❌'}`);
+
+      // Validate critical fields
+      if (
+        !commitment ||
+        !scriptPubKey ||
+        !pubkey ||
+        !ephemeralPubkey
+      ) {
+        debug(`[parseWatchOnlyTransactionsCT] Skipping - missing critical fields`);
+        continue;
+      }
+
+      utxos.push({
+        txid: txId,
+        vout,
+        amount: amount || 0n,
+        commitment,
+        blind: blind || new Uint8Array(32),
+        scriptPubKey,
+        pubkey,
+        ephemeralPubkey,
+      });
+    } catch (error) {
+      console.error(`Error parsing CT transaction: ${error}`);
       // Continue with next transaction
     }
   }

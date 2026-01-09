@@ -73,6 +73,51 @@ export interface SelectedCoin {
 }
 
 // ============================================================================
+// CT (Confidential Transaction) Types
+// ============================================================================
+
+/**
+ * CT Unspent transaction output
+ *
+ * CT outputs use scriptPubKey (like regular Bitcoin) instead of just a pubkey.
+ * They don't require ring signatures or key images for spending.
+ */
+export interface UTXO_CT {
+  /** Transaction ID */
+  txid: TxId;
+  /** Output index */
+  vout: number;
+  /** Amount in satoshis */
+  amount: bigint;
+  /** Pedersen commitment (33 bytes) */
+  commitment: Commitment;
+  /** Blinding factor (32 bytes) */
+  blind: Blind;
+  /** Script pubkey (for P2PKH: OP_DUP OP_HASH160 <hash> OP_EQUALVERIFY OP_CHECKSIG) */
+  scriptPubKey: Uint8Array;
+  /** Ephemeral pubkey from tx (for ECDH) */
+  ephemeralPubkey: PublicKey;
+  /** Derived public key for this output (from stealth derivation) */
+  pubkey: PublicKey;
+  /** Block height where this output was confirmed */
+  blockHeight: number;
+  /** Is this output spendable? */
+  spendable: boolean;
+}
+
+/**
+ * CT coin selected for spending
+ *
+ * Unlike RingCT, CT spending doesn't need key images (no ring signature).
+ */
+export interface SelectedCoinCT {
+  /** The CT UTXO being spent */
+  utxo: UTXO_CT;
+  /** Secret key for this output (derived from stealth) */
+  secretKey: SecretKey;
+}
+
+// ============================================================================
 // Transaction Types
 // ============================================================================
 
@@ -118,7 +163,7 @@ export enum DataOutputTypes {
 }
 
 /**
- * Transaction input (with ring signature)
+ * Transaction input (with ring signature) - for RingCT
  */
 export interface TxInput {
   /** Ring of public keys (decoys + real) */
@@ -150,6 +195,30 @@ export interface TxInput {
   };
   /** Ring member indices (blockchain output indices) */
   ringIndices?: number[];
+}
+
+/**
+ * CT Transaction input - standard Bitcoin-style input
+ *
+ * CT inputs use ECDSA signatures, not MLSAG ring signatures.
+ * They reference actual transaction outputs (not anon set indices).
+ */
+export interface TxInputCT {
+  /** Previous output reference */
+  prevout: {
+    /** Transaction hash (actual txid, 32 bytes) */
+    hash: Uint8Array;
+    /** Output index (actual vout) */
+    n: number;
+  };
+  /** ECDSA signature + pubkey (or witness for segwit) */
+  scriptSig: Uint8Array;
+  /** Sequence number */
+  nSequence: number;
+  /** Script witness (for segwit spending) */
+  scriptWitness?: {
+    stack: Uint8Array[];
+  };
 }
 
 /**

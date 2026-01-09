@@ -5,9 +5,9 @@
  * with support for caching and pagination.
  */
 
-import { UTXO, SecretKey } from './types';
+import { UTXO, UTXO_CT, SecretKey } from './types';
 import { RpcRequester } from './rpc';
-import { parseWatchOnlyTransactions, ParsedUTXO } from './watch-only-tx';
+import { parseWatchOnlyTransactions, parseWatchOnlyTransactionsCT, ParsedUTXO, ParsedUTXO_CT } from './watch-only-tx';
 import { bytesToHex } from './utils';
 import { debug } from './debug';
 
@@ -415,6 +415,233 @@ export async function getBalance(
     utxos: allUnspentUtxos,
     lastProcessedIndex,
     spentKeyImages: Array.from(allSpentKeyImages),
+    totalOutputsScanned,
+    ownedOutputsFound: totalOwnedOutputsFound,
+  };
+}
+
+// ============================================================================
+// CT (Stealth) Balance Functions
+// ============================================================================
+
+/**
+ * Callback function to stream batches of CT UTXOs as they are discovered
+ */
+export type OnUtxoCTCallback = (utxos: ParsedUTXO_CT[]) => void | Promise<void>;
+
+/**
+ * Options for getting CT wallet balance
+ */
+export interface GetBalanceCTOptions {
+  /**
+   * Starting index for getwatchonlytxes pagination
+   */
+  startIndex?: number;
+
+  /**
+   * Known spent txid:vout pairs (e.g., "abc123:0") to skip
+   * CT outputs don't use key images - track spent status via outpoints
+   */
+  knownSpentOutpoints?: Set<string> | string[];
+
+  /**
+   * Optional callback to stream batches of UTXOs as they are discovered
+   */
+  onUtxoDiscovered?: OnUtxoCTCallback;
+}
+
+/**
+ * Result from getting CT wallet balance
+ */
+export interface BalanceResultCT {
+  /** Total balance of all unspent CT UTXOs (in satoshis) */
+  totalBalance: bigint;
+
+  /** All unspent CT UTXOs found */
+  utxos: UTXO_CT[];
+
+  /** Last processed index - use this as startIndex for next call */
+  lastProcessedIndex: number;
+
+  /** Total number of outputs scanned from blockchain */
+  totalOutputsScanned: number;
+
+  /** Number of outputs owned by this wallet */
+  ownedOutputsFound: number;
+}
+
+/**
+ * Convert ParsedUTXO_CT to UTXO_CT format
+ */
+function convertParsedCTToUtxo(
+  parsedUtxos: ParsedUTXO_CT[],
+  spentOutpoints: Set<string>
+): { unspentUtxos: UTXO_CT[]; unspentParsed: ParsedUTXO_CT[] } {
+  const unspentUtxos: UTXO_CT[] = [];
+  const unspentParsed: ParsedUTXO_CT[] = [];
+
+  for (const parsedUtxo of parsedUtxos) {
+    // Skip if missing critical fields
+    if (!parsedUtxo.scriptPubKey || parsedUtxo.amount === undefined) {
+      continue;
+    }
+
+    // Check if this UTXO has been spent (by outpoint)
+    const outpoint = `${parsedUtxo.txid}:${parsedUtxo.vout}`;
+    if (spentOutpoints.has(outpoint)) {
+      continue;
+    }
+
+    // Convert to UTXO_CT format
+    const utxo: UTXO_CT = {
+      txid: parsedUtxo.txid || '',
+      vout: parsedUtxo.vout || 0,
+      amount: parsedUtxo.amount,
+      commitment: parsedUtxo.commitment!,
+      blind: parsedUtxo.blind!,
+      scriptPubKey: parsedUtxo.scriptPubKey!,
+      pubkey: parsedUtxo.pubkey!,
+      ephemeralPubkey: parsedUtxo.ephemeralPubkey!,
+      blockHeight: 0,
+      spendable: true,
+    };
+
+    unspentUtxos.push(utxo);
+    unspentParsed.push(parsedUtxo);
+  }
+
+  return { unspentUtxos, unspentParsed };
+}
+
+/**
+ * Get CT (stealth) wallet balance in a single call
+ *
+ * This function scans for CT outputs only (not RingCT).
+ * CT outputs use scriptPubKey and ECDSA signatures, not ring signatures.
+ *
+ * @param spendSecret - Wallet spend private key
+ * @param scanSecret - Wallet scan private key
+ * @param rpc - RPC client instance (optional, uses RpcRequester by default)
+ * @param options - Configuration options
+ * @returns Balance result with unspent CT UTXOs
+ *
+ * @example
+ * ```typescript
+ * const result = await getBalanceCT(wallet.spendSecret, wallet.scanSecret);
+ * console.log('CT Balance:', satoshisToVeil(result.totalBalance), 'VEIL');
+ * console.log('CT UTXOs:', result.utxos.length);
+ * ```
+ */
+export async function getBalanceCT(
+  spendSecret: SecretKey,
+  scanSecret: SecretKey,
+  rpc: typeof RpcRequester = RpcRequester,
+  options: GetBalanceCTOptions = {}
+): Promise<BalanceResultCT> {
+  const {
+    startIndex = 0,
+    knownSpentOutpoints = [],
+    onUtxoDiscovered,
+  } = options;
+
+  // Convert to Set for O(1) lookups
+  const spentOutpoints = knownSpentOutpoints instanceof Set
+    ? knownSpentOutpoints
+    : new Set(knownSpentOutpoints);
+
+  debug('[getBalanceCT] Starting CT balance fetch');
+  debug(`[getBalanceCT] Options: startIndex=${startIndex}`);
+  debug(`[getBalanceCT] Known spent outpoints: ${spentOutpoints.size}`);
+
+  const allUnspentUtxos: UTXO_CT[] = [];
+  let totalBalance = 0n;
+  let currentIndex = startIndex;
+  let totalOutputsScanned = 0;
+  let totalOwnedOutputsFound = 0;
+  let lastProcessedIndex = startIndex;
+
+  const scanSecretHex = bytesToHex(scanSecret);
+
+  while (true) {
+    debug(`[getBalanceCT] ═══ Processing page starting at index ${currentIndex} ═══`);
+
+    // Fetch transactions
+    const response = await rpc.getWatchOnlyTxes(scanSecretHex, currentIndex);
+    const stealthTxs = response?.stealth || [];
+
+    if (!stealthTxs || stealthTxs.length === 0) {
+      debug(`[getBalanceCT] No more CT transactions (got ${stealthTxs.length} results)`);
+      break;
+    }
+
+    totalOutputsScanned += stealthTxs.length;
+    debug(`[getBalanceCT] Fetched ${stealthTxs.length} CT transactions`);
+
+    // Parse transactions
+    const txHexArray = stealthTxs.map((item: any) => item.raw || item.hex || item);
+    const metadata = stealthTxs.map((item: any) => ({
+      amount: item.amount,
+      blind: item.blind,
+    }));
+
+    let pageParsedUtxos: ParsedUTXO_CT[];
+    try {
+      pageParsedUtxos = await parseWatchOnlyTransactionsCT(
+        txHexArray,
+        spendSecret,
+        scanSecret,
+        metadata
+      );
+
+      debug(`[getBalanceCT] Parsed ${pageParsedUtxos.length} owned CT UTXOs from this page`);
+      totalOwnedOutputsFound += pageParsedUtxos.length;
+    } catch (error: any) {
+      debug(`[getBalanceCT] Error parsing batch: ${error.message}`);
+      throw new Error(`Failed to parse CT transactions at index ${currentIndex}: ${error.message}`);
+    }
+
+    // Filter unspent and convert
+    const { unspentUtxos: pageUnspentUtxos, unspentParsed: pageUnspentParsed } =
+      convertParsedCTToUtxo(pageParsedUtxos, spentOutpoints);
+
+    // Add to totals
+    allUnspentUtxos.push(...pageUnspentUtxos);
+    for (const utxo of pageUnspentUtxos) {
+      totalBalance += utxo.amount;
+    }
+
+    debug(`[getBalanceCT] Found ${pageUnspentUtxos.length} unspent CT UTXOs in this page`);
+
+    // Invoke callback
+    if (onUtxoDiscovered && pageUnspentParsed.length > 0) {
+      debug(`[getBalanceCT] Calling callback with ${pageUnspentParsed.length} CT UTXOs`);
+      await onUtxoDiscovered(pageUnspentParsed);
+    }
+
+    // Update pagination
+    const lastTx = stealthTxs[stealthTxs.length - 1];
+    if (lastTx?.dbindex !== undefined) {
+      lastProcessedIndex = lastTx.dbindex + 1;
+    }
+
+    if (stealthTxs.length < 1000) {
+      debug('[getBalanceCT] Reached end of CT transactions');
+      break;
+    }
+
+    currentIndex = lastProcessedIndex;
+  }
+
+  debug(`[getBalanceCT] ═══ Processing complete ═══`);
+  debug(`[getBalanceCT] Total CT outputs scanned: ${totalOutputsScanned}`);
+  debug(`[getBalanceCT] Total CT owned outputs: ${totalOwnedOutputsFound}`);
+  debug(`[getBalanceCT] Total unspent CT UTXOs: ${allUnspentUtxos.length}`);
+  debug(`[getBalanceCT] Total CT balance: ${totalBalance}`);
+
+  return {
+    totalBalance,
+    utxos: allUnspentUtxos,
+    lastProcessedIndex,
     totalOutputsScanned,
     ownedOutputsFound: totalOwnedOutputsFound,
   };

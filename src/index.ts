@@ -29,9 +29,6 @@ export * from './TransactionBuilder';
 // Export UTXO scanner
 export * from './scanner';
 
-// Version
-export const VERSION = '0.1.0';
-
 // Re-export WASM-specific functions
 export {
   initWasm,
@@ -43,7 +40,13 @@ export {
   performEcdh,
   generateMlsag,
   verifyMlsag,
+  // CT-specific ECDSA signing
+  ecdsaSign,
+  ecdsaSignCompact,
 } from './wasm';
+
+// Export CT utilities
+export * from './ct-utils';
 
 export {
   hexToBytes,
@@ -105,15 +108,22 @@ export {
   CWatchOnlyTx,
   CWatchOnlyTxWithIndex,
   CTxOutRingCT,
+  CTxOutCT,
   WatchOnlyTxType,
   parseWatchOnlyTransactions,
+  parseWatchOnlyTransactionsCT,
   type ParsedUTXO,
+  type ParsedUTXO_CT,
   type TransactionMetadata,
 } from './watch-only-tx';
 
 export {
   getBalance,
+  getBalanceCT,
   type GetBalanceOptions,
+  type GetBalanceCTOptions,
   type BalanceResult,
+  type BalanceResultCT,
   type OnUtxoCallback,
+  type OnUtxoCTCallback,
 } from './balance';

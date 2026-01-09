@@ -6,6 +6,8 @@
 
 import {
   UTXO,
+  UTXO_CT,
+  TxInputCT,
   Transaction,
   TxInput,
   TxOutput,
@@ -36,7 +38,16 @@ import {
   prepareMlsag,
   generateMlsag,
   verifyMlsag,
+  ecdsaSign,
 } from './wasm';
+import {
+  computeCTSighash,
+  createP2PKHScriptSig,
+  serializeCTInput,
+  deriveCTSpendKey,
+  SIGHASH_ALL,
+  SEQUENCE_FINAL,
+} from './ct-utils';
 import {
   hexToBytes,
   bytesToHex,
@@ -2195,5 +2206,411 @@ export class TransactionBuilder {
       originalUtxoCount: utxos.length,
       finalUtxoCount,
     };
+  }
+
+  // ============================================================================
+  // CT -> RingCT Transaction Building (sendstealthtoringct)
+  // ============================================================================
+
+  /**
+   * Send from CT (stealth) outputs to RingCT outputs
+   *
+   * This is the equivalent of the Veil Core `sendstealthtoringct` RPC command.
+   * CT outputs use ECDSA signatures and standard scriptPubKey, while the outputs
+   * are created as RingCT outputs with full privacy.
+   *
+   * @param spendKey - Spend private key
+   * @param scanKey - Scan private key
+   * @param recipients - Recipients and amounts
+   * @param ctUtxos - CT UTXOs to spend
+   * @returns Built transaction result
+   *
+   * @example
+   * ```typescript
+   * const result = await txBuilder.sendStealthToRingCT(
+   *   spendKey,
+   *   scanKey,
+   *   [{ address: 'sv1qq...', amount: 100000000n }],
+   *   myCTUtxos
+   * );
+   * console.log('TX:', result.txHex);
+   * ```
+   */
+  async sendStealthToRingCT(
+    spendKey: SecretKey,
+    scanKey: SecretKey,
+    recipients: Recipient[],
+    ctUtxos: UTXO_CT[]
+  ): Promise<BuildTransactionResult> {
+    // Ensure WASM is initialized
+    if (!this.wasmInitialized) {
+      await this.initialize();
+    }
+
+    debug('[sendStealthToRingCT] Starting CT -> RingCT transaction build');
+    debug(`[sendStealthToRingCT] Recipients: ${recipients.length}, CT UTXOs: ${ctUtxos.length}`);
+
+    // Validate inputs
+    if (recipients.length === 0) {
+      throw new Error('At least one recipient is required');
+    }
+    if (ctUtxos.length === 0) {
+      throw new Error('At least one CT UTXO is required');
+    }
+
+    // Calculate total output amount
+    let totalOutputAmount = 0n;
+    for (const r of recipients) {
+      if (r.amount <= 0n) {
+        throw new Error('Recipient amount must be positive');
+      }
+      totalOutputAmount += r.amount;
+    }
+
+    // Calculate total input amount
+    let totalInputAmount = 0n;
+    for (const utxo of ctUtxos) {
+      totalInputAmount += utxo.amount;
+    }
+
+    debug(`[sendStealthToRingCT] Total input: ${satoshisToVeil(totalInputAmount)} VEIL`);
+    debug(`[sendStealthToRingCT] Total output: ${satoshisToVeil(totalOutputAmount)} VEIL`);
+
+    // Estimate fee (CT inputs are smaller than RingCT, ~150 bytes per input)
+    const estimatedInputSize = ctUtxos.length * 150;
+    // RingCT outputs are larger (~5500 bytes with range proof)
+    const estimatedOutputSize = (recipients.length + 1) * 5500; // +1 for change
+    const estimatedSize = 10 + estimatedInputSize + estimatedOutputSize + 100; // header + fee output
+    const estimatedFee = BigInt(Math.ceil(estimatedSize / 1000)) * BigInt(this.config.feePerKb);
+
+    debug(`[sendStealthToRingCT] Estimated size: ${estimatedSize} bytes`);
+    debug(`[sendStealthToRingCT] Estimated fee: ${satoshisToVeil(estimatedFee)} VEIL`);
+
+    // Check if we have enough funds
+    const totalNeeded = totalOutputAmount + estimatedFee;
+    if (totalInputAmount < totalNeeded) {
+      throw new Error(`Insufficient funds: need ${satoshisToVeil(totalNeeded)} VEIL, have ${satoshisToVeil(totalInputAmount)} VEIL`);
+    }
+
+    // Calculate change
+    const changeAmount = totalInputAmount - totalNeeded;
+    debug(`[sendStealthToRingCT] Change amount: ${satoshisToVeil(changeAmount)} VEIL`);
+
+    // Build CT inputs first to get input blinds
+    const inputs: TxInputCT[] = [];
+    const inputBlinds: Blind[] = [];
+
+    for (const utxo of ctUtxos) {
+      // Create unsigned input
+      const input: TxInputCT = {
+        prevout: {
+          hash: hexToBytes(utxo.txid).reverse(), // Convert to internal byte order
+          n: utxo.vout,
+        },
+        scriptSig: new Uint8Array(0), // Will be filled after signing
+        nSequence: SEQUENCE_FINAL,
+      };
+
+      inputs.push(input);
+      inputBlinds.push(utxo.blind);
+    }
+
+    // Build the transaction outputs (RingCT format)
+    const outputs: TxOutput[] = [];
+    const outputBlinds: Blind[] = [];
+    const outputCommitments: Commitment[] = [];
+
+    // Fee output (must be first)
+    const feeOutput: TxOutputData = {
+      type: OutputType.OUTPUT_DATA,
+      address: '',
+      amount: 0n,
+      vData: this.encodeFeeData(estimatedFee),
+    };
+    outputs.push(feeOutput);
+
+    // Derive keys for recipient outputs
+    const spendPubkey = derivePublicKey(spendKey);
+    const scanPubkey = derivePublicKey(scanKey);
+
+    // Determine if we have a change output
+    const hasChange = changeAmount > DUST_THRESHOLD;
+    const changeAddress = hasChange ? generateStealthAddress(scanPubkey, spendPubkey) : null;
+
+    // Build all outputs EXCEPT the last one with random blinds
+    // The last output will use a calculated blind to balance the commitments
+    const allOutputsToCreate: Array<{ address: StealthAddress; amount: bigint }> = [];
+    for (const recipient of recipients) {
+      allOutputsToCreate.push({ address: recipient.address, amount: recipient.amount });
+    }
+    if (hasChange && changeAddress) {
+      allOutputsToCreate.push({ address: changeAddress, amount: changeAmount });
+    }
+
+    // Build all outputs except the last with random blinds
+    for (let i = 0; i < allOutputsToCreate.length - 1; i++) {
+      const { address, amount } = allOutputsToCreate[i];
+      const outputResult = await this.buildRingCTOutput(address, amount);
+      outputs.push(outputResult.output);
+      outputBlinds.push(outputResult.blind);
+      outputCommitments.push(outputResult.commitment);
+    }
+
+    // Calculate the blind for the last output to balance the commitments
+    // sum(input_blinds) = sum(output_blinds)
+    // last_blind = sum(input_blinds) - sum(other_output_blinds)
+    const lastOutput = allOutputsToCreate[allOutputsToCreate.length - 1];
+
+    // Use sumBlinds to calculate the balancing blind
+    // nPositive = inputBlinds.length means those are added, rest are subtracted
+    const blindsForSum = [...inputBlinds, ...outputBlinds];
+    const nPositive = inputBlinds.length;
+    const lastBlind = sumBlinds(blindsForSum, nPositive);
+
+    debug(`[sendStealthToRingCT] Calculated balancing blind for last output`);
+
+    // Build the last output with the calculated blind
+    const lastOutputResult = await this.buildRingCTOutputWithBlind(
+      lastOutput.address,
+      lastOutput.amount,
+      lastBlind
+    );
+    outputs.push(lastOutputResult.output);
+    outputBlinds.push(lastBlind);
+    outputCommitments.push(lastOutputResult.commitment);
+
+    // Build partial transaction for sighash calculation
+    const partialTx = {
+      version: 2,
+      inputs: inputs.map(inp => ({
+        prevout: inp.prevout,
+        nSequence: inp.nSequence,
+      })),
+      outputs: outputs,
+      lockTime: 0,
+    };
+
+    // Sign each CT input
+    for (let i = 0; i < ctUtxos.length; i++) {
+      const utxo = ctUtxos[i];
+
+      // Derive the spend key for this output
+      const outputSpendKey = await deriveCTSpendKey(spendKey, scanKey, utxo.ephemeralPubkey);
+      const outputPubkey = derivePublicKey(outputSpendKey);
+
+      // Compute sighash
+      const sighash = await computeCTSighash(
+        partialTx,
+        i,
+        utxo.scriptPubKey,
+        utxo.commitment,
+        SIGHASH_ALL
+      );
+
+      // Sign with ECDSA
+      const signature = ecdsaSign(sighash, outputSpendKey);
+
+      // Build scriptSig (P2PKH format)
+      const scriptSig = createP2PKHScriptSig(signature, outputPubkey, SIGHASH_ALL);
+      inputs[i].scriptSig = scriptSig;
+    }
+
+    // Serialize the transaction
+    const txHex = await this.serializeCTToRingCTTransaction(inputs, outputs, estimatedFee);
+
+    // Calculate txid
+    const txBytes = hexToBytes(txHex);
+    const txidBytes = await doubleSha256(txBytes);
+    const txid = bytesToHex(txidBytes.reverse());
+
+    debug(`[sendStealthToRingCT] Transaction built successfully`);
+    debug(`[sendStealthToRingCT] TXID: ${txid}`);
+    debug(`[sendStealthToRingCT] Size: ${txBytes.length} bytes`);
+    debug(`[sendStealthToRingCT] Fee: ${satoshisToVeil(estimatedFee)} VEIL`);
+
+    return {
+      txHex,
+      txid,
+      fee: estimatedFee,
+      change: changeAmount,
+      size: txBytes.length,
+      inputs: ctUtxos as unknown as UTXO[], // CT UTXOs (different type, cast for interface)
+      outputs: outputs,
+    };
+  }
+
+  /**
+   * Build a RingCT output for CT -> RingCT transactions
+   */
+  private async buildRingCTOutput(
+    address: StealthAddress,
+    amount: bigint
+  ): Promise<{
+    output: TxOutputRingCT;
+    blind: Blind;
+    commitment: Commitment;
+  }> {
+    // Generate ephemeral keys for this output
+    const ephemeralResult = await generateEphemeralKeys(address);
+
+    // Generate random blinding factor
+    const blind = getRandomBytes(32);
+
+    // Create commitment
+    const commitment = createCommitment(amount, blind);
+
+    // Generate range proof
+    const rangeProofParams = selectRangeProofParameters(amount);
+    const rangeProof = generateRangeProof({
+      commitment,
+      value: amount,
+      blind,
+      nonce: ephemeralResult.sharedSecret,
+      message: new Uint8Array(0),
+      minValue: 0n,
+      exp: rangeProofParams.exponent,
+      minBits: rangeProofParams.minBits,
+    });
+
+    // Build vData (ephemeral pubkey)
+    const vData = concatBytes(
+      new Uint8Array([0x21]), // Push 33 bytes
+      ephemeralResult.ephemeralPubkey
+    );
+
+    const output: TxOutputRingCT = {
+      type: OutputType.OUTPUT_RINGCT,
+      address,
+      amount,
+      pk: ephemeralResult.destPubkey,
+      commitment,
+      vData,
+      vRangeproof: rangeProof.proof,
+      blind,
+    };
+
+    return { output, blind, commitment };
+  }
+
+  /**
+   * Build a RingCT output with a specific blind (for commitment balancing)
+   */
+  private async buildRingCTOutputWithBlind(
+    address: StealthAddress,
+    amount: bigint,
+    blind: Blind
+  ): Promise<{
+    output: TxOutputRingCT;
+    commitment: Commitment;
+  }> {
+    // Generate ephemeral keys for this output
+    const ephemeralResult = await generateEphemeralKeys(address);
+
+    // Create commitment with the provided blind
+    const commitment = createCommitment(amount, blind);
+
+    // Generate range proof
+    const rangeProofParams = selectRangeProofParameters(amount);
+    const rangeProof = generateRangeProof({
+      commitment,
+      value: amount,
+      blind,
+      nonce: ephemeralResult.sharedSecret,
+      message: new Uint8Array(0),
+      minValue: 0n,
+      exp: rangeProofParams.exponent,
+      minBits: rangeProofParams.minBits,
+    });
+
+    // Build vData (ephemeral pubkey)
+    const vData = concatBytes(
+      new Uint8Array([0x21]), // Push 33 bytes
+      ephemeralResult.ephemeralPubkey
+    );
+
+    const output: TxOutputRingCT = {
+      type: OutputType.OUTPUT_RINGCT,
+      address,
+      amount,
+      pk: ephemeralResult.destPubkey,
+      commitment,
+      vData,
+      vRangeproof: rangeProof.proof,
+      blind,
+    };
+
+    return { output, commitment };
+  }
+
+  /**
+   * Encode fee data for OUTPUT_DATA
+   */
+  private encodeFeeData(fee: bigint): Uint8Array {
+    // Format: DO_FEE (1 byte) + varint(fee)
+    const feeBytes: number[] = [DataOutputTypes.DO_FEE];
+
+    // Encode fee as varint
+    let remaining = fee;
+    do {
+      let byte = Number(remaining & 0x7fn);
+      remaining = remaining >> 7n;
+      if (remaining > 0n) {
+        byte |= 0x80;
+      }
+      feeBytes.push(byte);
+    } while (remaining > 0n);
+
+    return new Uint8Array(feeBytes);
+  }
+
+  /**
+   * Serialize a CT -> RingCT transaction
+   *
+   * Veil transaction format (from transaction.h:722):
+   * 1. Version low byte (1 byte)
+   * 2. Transaction type (1 byte) - high byte of version
+   * 3. Has witness flag (1 byte)
+   * 4. Lock time (4 bytes)
+   * 5. Inputs (with varint count)
+   * 6. Outputs (with varint count, each prefixed by output type)
+   * 7. Witness data (if has witness)
+   */
+  private async serializeCTToRingCTTransaction(
+    inputs: TxInputCT[],
+    outputs: TxOutput[],
+    fee: bigint
+  ): Promise<string> {
+    const parts: Uint8Array[] = [];
+
+    // Version: low byte = 2, high byte = 0 (TXN_STANDARD)
+    const version = 2;
+    const txType = 0; // TXN_STANDARD
+    parts.push(new Uint8Array([version & 0xFF]));       // Version low byte
+    parts.push(new Uint8Array([txType & 0xFF]));        // Transaction type
+
+    // Has witness flag (0 = no witness for CT inputs)
+    parts.push(new Uint8Array([0x00]));
+
+    // Lock time (4 bytes, little-endian)
+    const lockTimeBytes = new Uint8Array(4);
+    parts.push(lockTimeBytes);
+
+    // Number of inputs (varint)
+    parts.push(this.encodeVarInt(BigInt(inputs.length)));
+
+    // Inputs
+    for (const input of inputs) {
+      parts.push(serializeCTInput(input));
+    }
+
+    // Number of outputs (varint)
+    parts.push(this.encodeVarInt(BigInt(outputs.length)));
+
+    // Outputs (each prefixed by output type)
+    for (const output of outputs) {
+      parts.push(serializeOutput(output));
+    }
+
+    return bytesToHex(concatBytes(...parts));
   }
 }
