@@ -6,7 +6,7 @@ if [ -f .env ]; then
 fi
 
 # Use VEIL_NODE_URL from environment or default to public API
-VEIL_NODE_URL="${VEIL_NODE_URL:-https://explorer-api.veil-project.com}"
+VEIL_NODE_URL="${VEIL_NODE_URL:-https://api.veil.zelcore.io}"
 
 echo ""
 echo "==============================================================="
