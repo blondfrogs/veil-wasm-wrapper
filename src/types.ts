@@ -460,7 +460,7 @@ export interface GetAnonOutputsResponse {
  * RPC client configuration
  */
 export interface RpcConfig {
-  /** Node URL (e.g., https://explorer-api.veil-project.com) */
+  /** Node URL (e.g., https://api.veil.zelcore.io) */
   url: string;
   /** Optional: RPC username */
   username?: string;

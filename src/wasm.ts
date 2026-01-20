@@ -126,18 +126,38 @@ export async function initWasm(wasmPath?: string): Promise<VeilWasm> {
     }
     // In Browser
     else {
-      // Load from provided path or default
-      const scriptPath = wasmPath || './veil_wasm.js';
-      const module = await import(scriptPath);
-      // For browser builds, we may need to call default()
-      if (module.default && typeof module.default === 'function') {
-        await module.default();
+      // Check if wasm_bindgen is already loaded via script tag
+      if ((window as any).wasm_bindgen) {
+        console.log('[initWasm] Using preloaded wasm_bindgen from script tag');
+
+        // If it's a function, call it to initialize
+        if (typeof (window as any).wasm_bindgen === 'function') {
+          const module = await (window as any).wasm_bindgen();
+          wasmModule = module as VeilWasm;
+        }
+        // If it's already an object with the exports, use it directly
+        else if (typeof (window as any).wasm_bindgen === 'object') {
+          console.log('[initWasm] wasm_bindgen is already initialized object');
+          wasmModule = (window as any).wasm_bindgen as VeilWasm;
+        }
       }
-      wasmModule = module as VeilWasm;
+      // Otherwise try dynamic import
+      else {
+        console.log('[initWasm] Attempting dynamic import');
+        const scriptPath = wasmPath || './veil_wasm.js';
+        const module = await import(scriptPath);
+        // For browser builds, we may need to call default()
+        if (module.default && typeof module.default === 'function') {
+          await module.default();
+        }
+        wasmModule = module as VeilWasm;
+      }
     }
 
     // Initialize panic hook for better error messages
-    wasmModule!.init_panic_hook();
+    if (wasmModule && wasmModule.init_panic_hook) {
+      wasmModule.init_panic_hook();
+    }
 
     return wasmModule!;
   } catch (error) {

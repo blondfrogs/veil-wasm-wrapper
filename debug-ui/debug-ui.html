@@ -1,0 +1,1684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Veil Transaction Debug Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: #f9f9f9;
+        }
+
+        .section.active {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .section h2 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-number {
+            background: #667eea;
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+            font-size: 14px;
+        }
+
+        input[type="text"],
+        input[type="password"],
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        button.secondary {
+            background: #6c757d;
+        }
+
+        button.secondary:hover {
+            background: #5a6268;
+        }
+
+        button.danger {
+            background: #dc3545;
+        }
+
+        button.danger:hover {
+            background: #c82333;
+        }
+
+        .utxo-list {
+            margin-top: 15px;
+        }
+
+        .utxo-item {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            background: white;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .utxo-item:hover {
+            border-color: #667eea;
+            background: #f0f4ff;
+        }
+
+        .utxo-item.selected {
+            border-color: #667eea;
+            background: #e8eeff;
+        }
+
+        .utxo-item.spent {
+            background: #ffe0e0;
+            border-color: #ffcccc;
+        }
+
+        .utxo-item.spent:hover {
+            border-color: #ff9999;
+            background: #ffd0d0;
+        }
+
+        .utxo-item.spent.selected {
+            border-color: #dc3545;
+            background: #ffb0b0;
+        }
+
+        .utxo-status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+
+        .utxo-status.unspent {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .utxo-status.spent {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .info-box {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .info-box.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 4px solid #17a2b8;
+        }
+
+        .info-box.success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+
+        .info-box.warning {
+            background: #fff3cd;
+            color: #856404;
+            border-left: 4px solid #ffc107;
+        }
+
+        .info-box.error {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+
+        .balance-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .balance-display h3 {
+            font-size: 16px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+
+        .balance-display .amount {
+            font-size: 36px;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        .balance-display .sub-amount {
+            font-size: 14px;
+            opacity: 0.8;
+            margin-top: 5px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+
+        pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .tx-details {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 2px solid #ddd;
+            margin-top: 15px;
+        }
+
+        .tx-details h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .tx-detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .tx-detail-row:last-child {
+            border-bottom: none;
+        }
+
+        .tx-detail-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .tx-detail-value {
+            font-family: 'Courier New', monospace;
+            color: #333;
+        }
+
+        .privacy-notice {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .privacy-notice h3 {
+            color: #856404;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .privacy-notice ul {
+            margin-left: 20px;
+            color: #856404;
+        }
+
+        .privacy-notice li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔐 Veil Transaction Debug Tool</h1>
+            <p>Diagnose transaction signing issues locally and privately</p>
+        </div>
+
+        <div class="content">
+            <div class="privacy-notice">
+                <h3>🔒 Privacy & Security</h3>
+                <ul>
+                    <li><strong>100% Local:</strong> All operations run in your browser. Nothing is sent to any server.</li>
+                    <li><strong>No Trust Required:</strong> Your private keys never leave your computer.</li>
+                    <li><strong>Open Source:</strong> You can review the code to verify security.</li>
+                    <li><strong>Recommended:</strong> Run this on an offline computer for maximum security.</li>
+                </ul>
+            </div>
+
+            <!-- Step 1: Input Keys -->
+            <div class="section active" id="step1">
+                <h2>
+                    <span class="section-number">1</span>
+                    Enter Wallet Keys
+                </h2>
+
+                <div class="form-group">
+                    <label>Stealth Address</label>
+                    <input type="text" id="stealthAddress" placeholder="sv1qq..." />
+                </div>
+
+                <div class="form-group">
+                    <label>Scan Secret (WIF or Hex)</label>
+                    <input type="password" id="scanSecret" placeholder="KwGk... (WIF) or 64 char hex" />
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="showScanSecret" />
+                        <label for="showScanSecret" style="margin: 0;">Show</label>
+                    </div>
+                    <div id="scanSecretFormat" class="info-box info hidden" style="margin-top: 5px; padding: 8px;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Spend Secret (WIF or Hex)</label>
+                    <input type="password" id="spendSecret" placeholder="L5gS... (WIF) or 64 char hex" />
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="showSpendSecret" />
+                        <label for="showSpendSecret" style="margin: 0;">Show</label>
+                    </div>
+                    <div id="spendSecretFormat" class="info-box info hidden" style="margin-top: 5px; padding: 8px;"></div>
+                </div>
+
+                <div class="form-group">
+                    <label>Spend Public Key (Hex) - Optional</label>
+                    <input type="text" id="spendPubkey" placeholder="Leave blank to auto-compute from spend secret" />
+                    <button type="button" onclick="computeSpendPublic()" class="secondary" style="margin-top: 5px;">Auto-Compute from Spend Secret</button>
+                    <div id="spendPubkeyStatus" class="info-box info hidden" style="margin-top: 5px; padding: 8px;"></div>
+                </div>
+
+                <div class="info-box info">
+                    <strong>💡 Tip:</strong> You can paste keys in either format:
+                    <ul style="margin: 5px 0 0 20px;">
+                        <li><strong>WIF format:</strong> Starts with K or L (e.g., KwGk... or L5gS...)</li>
+                        <li><strong>Hex format:</strong> 64 character hex string</li>
+                    </ul>
+                    The tool will auto-detect and convert WIF to hex for you!
+                </div>
+
+                <button onclick="saveKeys()">Save Keys & Continue</button>
+                <button onclick="clearAllData()" class="danger" style="margin-left: 10px;">Clear All Data</button>
+
+                <div class="info-box info" style="font-size: 12px; margin-top: 15px;">
+                    🔒 <strong>Security Notes:</strong><br>
+                    • Your private keys are stored in memory only (not saved to disk)<br>
+                    • Keys are automatically cleared when you close this page/tab<br>
+                    • No data is sent to any server - everything runs locally<br>
+                    • Click "Clear All Data" to immediately remove all keys and UTXOs from memory
+                </div>
+            </div>
+
+            <!-- Step 2: Fetch UTXOs -->
+            <div class="section" id="step2">
+                <h2>
+                    <span class="section-number">2</span>
+                    Fetch UTXOs from Blockchain
+                </h2>
+
+                <div id="step2-locked" class="info-box warning">
+                    Complete Step 1 first.
+                </div>
+
+                <div id="step2-content" class="hidden">
+                    <div class="form-group">
+                        <label>RPC Node URL</label>
+                        <input type="text" id="rpcUrl" value="https://api.veil.zelcore.io" />
+                    </div>
+
+                    <button onclick="fetchUTXOs()">Fetch UTXOs</button>
+
+                    <div id="fetchLoading" class="hidden loading">
+                        <div class="spinner"></div>
+                        <p>Fetching UTXOs from blockchain...</p>
+                    </div>
+
+                    <div id="fetchResult" class="hidden"></div>
+                </div>
+            </div>
+
+            <!-- Step 3: View Balance -->
+            <div class="section" id="step3">
+                <h2>
+                    <span class="section-number">3</span>
+                    Balance & UTXOs
+                </h2>
+
+                <div id="step3-locked" class="info-box warning">
+                    Complete Step 2 first.
+                </div>
+
+                <div id="step3-content" class="hidden">
+                    <div class="balance-display">
+                        <h3>Available Balance</h3>
+                        <div class="amount" id="totalBalance">0.00000000 VEIL</div>
+                        <div class="sub-amount" id="totalBalanceSats">(0 satoshis)</div>
+                    </div>
+
+                    <div class="balance-display" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                        <h3>Spent Balance</h3>
+                        <div class="amount" id="spentBalance">0.00000000 VEIL</div>
+                        <div class="sub-amount" id="spentBalanceSats">(0 satoshis)</div>
+                    </div>
+
+                    <h3 style="margin-top: 20px; margin-bottom: 10px;">All UTXOs</h3>
+                    <div id="utxoList" class="utxo-list"></div>
+                </div>
+            </div>
+
+            <!-- Step 4: Create Transaction -->
+            <div class="section" id="step4">
+                <h2>
+                    <span class="section-number">4</span>
+                    Create Transaction
+                </h2>
+
+                <div id="step4-locked" class="info-box warning">
+                    Complete Step 3 first.
+                </div>
+
+                <div id="step4-content" class="hidden">
+                    <div class="form-group">
+                        <label>Select UTXOs</label>
+                        <button onclick="selectAllUnspent()" class="secondary">Select All Unspent</button>
+                        <button onclick="selectAllUTXOs()" class="secondary" style="background: #dc3545;">Select All (Including Spent)</button>
+                        <button onclick="clearSelection()" class="secondary">Clear Selection</button>
+                    </div>
+
+                    <div class="info-box info">
+                        <strong>Selected:</strong> <span id="selectedCount">0</span> UTXO(s) totaling <span id="selectedAmount">0.00000000</span> VEIL
+                        <span id="spentWarning" class="hidden" style="display: block; margin-top: 5px; color: #dc3545; font-weight: bold;">
+                            ⚠️ Warning: <span id="spentCount">0</span> spent UTXO(s) selected - transaction will fail!
+                        </span>
+                    </div>
+
+                    <div class="info-box warning" style="font-size: 12px;">
+                        💡 <strong>Tip:</strong> You can select spent UTXOs to test error handling
+                    </div>
+
+                    <div class="form-group">
+                        <label>Destination Address</label>
+                        <div style="margin-bottom: 8px;">
+                            <label style="display: inline-flex; align-items: center; font-weight: normal; cursor: pointer;">
+                                <input type="checkbox" id="useSameAddress" onchange="toggleSameAddress()" style="margin-right: 8px;">
+                                Use same address (send to myself)
+                            </label>
+                        </div>
+                        <input type="text" id="destinationAddress" placeholder="sv1qq..." />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Send Amount (VEIL)</label>
+                        <input type="text" id="sendAmount" placeholder="0.00000000" />
+                        <button onclick="setMaxAmount()" class="secondary" style="margin-top: 5px;">Use Maximum (All Selected UTXOs)</button>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Ring Size</label>
+                        <select id="ringSize">
+                            <option value="3">3 (minimum)</option>
+                            <option value="5">5</option>
+                            <option value="7">7</option>
+                            <option value="11" selected>11 (default)</option>
+                            <option value="16">16</option>
+                            <option value="21">21</option>
+                            <option value="32">32 (maximum)</option>
+                        </select>
+                    </div>
+
+                    <button onclick="buildTransaction()">Build & Sign Transaction</button>
+
+                    <div id="buildLoading" class="hidden loading">
+                        <div class="spinner"></div>
+                        <p>Building and signing transaction...</p>
+                    </div>
+
+                    <div id="buildResult" class="hidden"></div>
+                </div>
+            </div>
+
+            <!-- Step 5: Broadcast -->
+            <div class="section" id="step5">
+                <h2>
+                    <span class="section-number">5</span>
+                    Broadcast Transaction
+                </h2>
+
+                <div id="step5-locked" class="info-box warning">
+                    Complete Step 4 first.
+                </div>
+
+                <div id="step5-content" class="hidden">
+                    <div class="info-box warning">
+                        <strong>Warning:</strong> Only broadcast if you're ready to send this transaction to the network. This action cannot be undone.
+                    </div>
+
+                    <button onclick="broadcastTransaction()">Broadcast to Network</button>
+                    <button onclick="copyTxHex()" class="secondary">Copy Transaction Hex</button>
+
+                    <div id="broadcastLoading" class="hidden loading">
+                        <div class="spinner"></div>
+                        <p>Broadcasting transaction...</p>
+                    </div>
+
+                    <div id="broadcastResult" class="hidden"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inline Base58 decoder for WIF conversion -->
+    <script>
+        // Base58 alphabet (Bitcoin)
+        const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+        function base58Decode(str) {
+            const alphabet = BASE58_ALPHABET;
+            const base = BigInt(58);
+            let result = BigInt(0);
+
+            // Process each character
+            for (let i = 0; i < str.length; i++) {
+                const char = str[i];
+                const digit = alphabet.indexOf(char);
+                if (digit < 0) {
+                    throw new Error(`Invalid base58 character: ${char}`);
+                }
+                result = result * base + BigInt(digit);
+            }
+
+            // Convert to bytes
+            const hex = result.toString(16);
+            const bytes = [];
+            for (let i = 0; i < hex.length; i += 2) {
+                bytes.push(parseInt(hex.substr(i, 2), 16));
+            }
+
+            // Handle leading zeros (represented as '1' in base58)
+            for (let i = 0; i < str.length && str[i] === '1'; i++) {
+                bytes.unshift(0);
+            }
+
+            return new Uint8Array(bytes);
+        }
+
+        // Make it globally available
+        window.bs58 = {
+            decode: base58Decode
+        };
+    </script>
+
+    <!-- Async WASM Loader - loads WASM then veil_wasm.js dynamically -->
+    <script>
+        // Setup CommonJS globals
+        window.module = { exports: {} };
+        window.exports = window.module.exports;
+        window.__dirname = '/';
+        window.__filename = '/veil_wasm.js';
+        window.global = window;
+
+        // Polyfill require() - define it globally FIRST
+        window.require = function(moduleName) {
+            if (moduleName === 'fs') {
+                return {
+                    readFileSync: function(path) {
+                        if (path.includes('veil_wasm_bg.wasm')) {
+                            if (!window.__wasmBytes) {
+                                throw new Error('WASM file not loaded yet');
+                            }
+                            return window.__wasmBytes;
+                        }
+                        throw new Error('File not found: ' + path);
+                    }
+                };
+            }
+            if (moduleName === 'path') {
+                return {
+                    join: function() { return Array.from(arguments).join('/'); }
+                };
+            }
+            throw new Error('Module not found: ' + moduleName);
+        };
+
+        // Load WASM and veil_wasm.js asynchronously
+        window.__wasmReady = (async function() {
+            console.log('Loading WASM binary...');
+
+            // Fetch WASM bytes
+            const response = await fetch('veil_wasm_bg.wasm');
+            const arrayBuffer = await response.arrayBuffer();
+            window.__wasmBytes = new Uint8Array(arrayBuffer);
+            console.log('✅ WASM binary loaded:', window.__wasmBytes.length, 'bytes');
+
+            // Now load veil_wasm.js dynamically
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'veil_wasm.js';
+                script.onload = () => {
+                    window.wasm_bindgen = window.module.exports;
+                    console.log('✅ wasm_bindgen loaded:', typeof window.wasm_bindgen);
+                    console.log('Available functions:', Object.keys(window.wasm_bindgen).filter(k => typeof window.wasm_bindgen[k] === 'function').slice(0, 10));
+                    console.log('Has derivePubkey:', typeof window.wasm_bindgen.derivePubkey);
+                    console.log('Has __wasm:', typeof window.wasm_bindgen.__wasm);
+                    resolve();
+                };
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        })();
+    </script>
+
+    <!-- Bundled Veil WASM Library -->
+    <script src="veil-wasm.bundle.js"></script>
+
+    <script>
+        // VeilWasm is now available globally
+        console.log('Veil Debug UI loaded');
+        console.log('VeilWasm library:', window.VeilWasm);
+
+        // Wait for WASM to be ready, then pre-initialize
+        if (window.VeilWasm && window.VeilWasm.initWasm && window.__wasmReady) {
+            window.__wasmReady.then(() => {
+                console.log('wasm_bindgen available:', typeof window.wasm_bindgen);
+                return window.VeilWasm.initWasm();
+            }).then(() => {
+                console.log('✅ WASM initialized successfully');
+            }).catch(err => {
+                console.error('❌ WASM initialization failed:', err);
+            });
+        }
+
+        // ============================================================================
+        // WIF to Hex Converter
+        // ============================================================================
+
+        async function wifToHex(wif) {
+            try {
+                // Decode base58 using the loaded library
+                const decoded = bs58.decode(wif);
+
+                // WIF format with checksum: [version][key][compressed_flag?][checksum]
+                // Total length should be 37 (uncompressed) or 38 (compressed)
+                if (decoded.length !== 37 && decoded.length !== 38) {
+                    throw new Error(`Invalid WIF length: ${decoded.length} bytes`);
+                }
+
+                // Split into payload and checksum
+                const payload = decoded.slice(0, -4);
+                const checksum = decoded.slice(-4);
+
+                // Verify checksum using Web Crypto API
+                const payloadBuffer = payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength);
+                const hash1 = await crypto.subtle.digest('SHA-256', payloadBuffer);
+                const hash2 = await crypto.subtle.digest('SHA-256', hash1);
+                const computedChecksum = new Uint8Array(hash2).slice(0, 4);
+
+                // Verify checksum
+                for (let i = 0; i < 4; i++) {
+                    if (checksum[i] !== computedChecksum[i]) {
+                        throw new Error('Invalid checksum');
+                    }
+                }
+
+                // Check version byte (0x80 for Veil mainnet)
+                if (payload[0] !== 0x80) {
+                    throw new Error(`Invalid version byte: 0x${payload[0].toString(16)}`);
+                }
+
+                // Extract private key (32 bytes after version byte)
+                let privateKey;
+                if (payload.length === 33) {
+                    // Uncompressed: [version][32 bytes]
+                    privateKey = payload.slice(1, 33);
+                } else if (payload.length === 34 && payload[33] === 0x01) {
+                    // Compressed: [version][32 bytes][0x01]
+                    privateKey = payload.slice(1, 33);
+                } else {
+                    throw new Error(`Invalid payload length: ${payload.length}`);
+                }
+
+                // Convert to hex
+                return Array.from(privateKey)
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+
+            } catch (error) {
+                throw new Error(`WIF decode failed: ${error.message}`);
+            }
+        }
+
+        function isWifFormat(str) {
+            // WIF keys typically start with K, L, or 5 and are 51-52 chars
+            return /^[KL5][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(str);
+        }
+
+        function isHexFormat(str) {
+            return /^[0-9a-fA-F]{64}$/.test(str);
+        }
+
+        // Auto-detect and convert on input
+        function setupAutoConvert(inputId, formatDivId) {
+            const input = document.getElementById(inputId);
+            const formatDiv = document.getElementById(formatDivId);
+
+            input.addEventListener('blur', async function() {
+                const value = this.value.trim();
+                if (!value) return;
+
+                formatDiv.classList.add('hidden');
+
+                if (isWifFormat(value)) {
+                    try {
+                        const hex = await wifToHex(value);
+                        this.value = hex;
+                        this.type = 'password';
+                        formatDiv.innerHTML = '✅ Detected WIF format - auto-converted to hex';
+                        formatDiv.classList.remove('hidden');
+                        console.log('Converted WIF to hex for', inputId);
+                    } catch (error) {
+                        formatDiv.innerHTML = `❌ WIF conversion failed: ${error.message}`;
+                        formatDiv.classList.remove('hidden');
+                        formatDiv.classList.remove('info');
+                        formatDiv.classList.add('error');
+                    }
+                } else if (isHexFormat(value)) {
+                    formatDiv.innerHTML = '✅ Detected hex format';
+                    formatDiv.classList.remove('hidden');
+                } else {
+                    formatDiv.innerHTML = '⚠️ Format not recognized. Expected WIF (51-52 chars starting with K/L) or hex (64 chars)';
+                    formatDiv.classList.remove('hidden');
+                    formatDiv.classList.remove('info');
+                    formatDiv.classList.add('warning');
+                }
+            });
+        }
+
+        // Compute spend public key from spend secret
+        window.computeSpendPublic = async function() {
+            const spendSecretInput = document.getElementById('spendSecret');
+            let spendSecret = spendSecretInput.value.trim();
+            const statusDiv = document.getElementById('spendPubkeyStatus');
+
+            // Convert from WIF if needed
+            if (isWifFormat(spendSecret)) {
+                try {
+                    spendSecret = await wifToHex(spendSecret);
+                    spendSecretInput.value = spendSecret;
+                } catch (error) {
+                    statusDiv.innerHTML = '❌ Invalid WIF format';
+                    statusDiv.classList.remove('hidden', 'info', 'success');
+                    statusDiv.classList.add('error');
+                    return;
+                }
+            }
+
+            if (!isHexFormat(spendSecret)) {
+                statusDiv.innerHTML = '❌ Spend secret must be 64 hex characters or valid WIF';
+                statusDiv.classList.remove('hidden', 'info', 'success');
+                statusDiv.classList.add('error');
+                return;
+            }
+
+            try {
+                // Check if VeilWasm is loaded
+                if (!window.VeilWasm) {
+                    throw new Error('VeilWasm library not loaded');
+                }
+
+                // Wait for WASM binary to be ready
+                if (window.__wasmReady) {
+                    statusDiv.innerHTML = '⏳ Loading WASM...';
+                    statusDiv.classList.remove('hidden');
+                    await window.__wasmReady;
+                }
+
+                // Initialize WASM if needed
+                statusDiv.innerHTML = '⏳ Initializing WASM...';
+                await VeilWasm.initWasm();
+
+                // Derive public key
+                const spendSecretBytes = VeilWasm.hexToBytes(spendSecret);
+                const spendPubkeyBytes = VeilWasm.derivePublicKey(spendSecretBytes);
+                const spendPubkeyHex = VeilWasm.bytesToHex(spendPubkeyBytes);
+
+                // Set the computed value
+                document.getElementById('spendPubkey').value = spendPubkeyHex;
+
+                statusDiv.innerHTML = '✅ Computed from spend secret';
+                statusDiv.classList.remove('error', 'warning');
+                statusDiv.classList.add('success');
+                statusDiv.classList.remove('hidden');
+
+                console.log('Computed spend public key:', spendPubkeyHex);
+
+            } catch (error) {
+                console.error('Error computing spend public key:', error);
+                statusDiv.innerHTML = `❌ Computation failed: ${error.message}`;
+                statusDiv.classList.remove('info', 'success');
+                statusDiv.classList.add('error');
+                statusDiv.classList.remove('hidden');
+            }
+        };
+
+        // Validate spend public key matches spend secret
+        window.validateSpendKeys = async function() {
+            const spendSecret = document.getElementById('spendSecret').value.trim();
+            const spendPubkey = document.getElementById('spendPubkey').value.trim();
+            const statusDiv = document.getElementById('spendPubkeyStatus');
+
+            if (!spendSecret || !spendPubkey) {
+                return true; // Can't validate if either is missing
+            }
+
+            try {
+                await VeilWasm.initWasm();
+
+                const spendSecretBytes = VeilWasm.hexToBytes(spendSecret);
+                const computedPubkeyBytes = VeilWasm.derivePublicKey(spendSecretBytes);
+                const computedPubkeyHex = VeilWasm.bytesToHex(computedPubkeyBytes);
+
+                if (computedPubkeyHex.toLowerCase() === spendPubkey.toLowerCase()) {
+                    statusDiv.innerHTML = '✅ Spend public key matches spend secret';
+                    statusDiv.classList.remove('error', 'warning');
+                    statusDiv.classList.add('success');
+                    statusDiv.classList.remove('hidden');
+                    return true;
+                } else {
+                    statusDiv.innerHTML = `❌ Mismatch! Expected: ${computedPubkeyHex}`;
+                    statusDiv.classList.remove('info', 'success');
+                    statusDiv.classList.add('error');
+                    statusDiv.classList.remove('hidden');
+                    return false;
+                }
+
+            } catch (error) {
+                console.error('Error validating keys:', error);
+                return false;
+            }
+        };
+
+        // Setup auto-convert on page load
+        window.addEventListener('load', () => {
+            setupAutoConvert('scanSecret', 'scanSecretFormat');
+            setupAutoConvert('spendSecret', 'spendSecretFormat');
+
+            // Auto-validate when spend pubkey is entered
+            document.getElementById('spendPubkey').addEventListener('blur', validateSpendKeys);
+        });
+
+        // Global state
+        window.appState = {
+            keys: null,
+            utxos: [],
+            selectedUTXOs: [],
+            builtTransaction: null,
+        };
+
+        // Clear all sensitive data
+        window.clearAllData = function() {
+            if (!confirm('This will clear all keys, UTXOs, and transaction data. Continue?')) {
+                return;
+            }
+
+            // Clear application state
+            window.appState = {
+                keys: null,
+                utxos: [],
+                selectedUTXOs: [],
+                builtTransaction: null,
+            };
+
+            // Clear all input fields
+            document.getElementById('stealthAddress').value = '';
+            document.getElementById('scanSecret').value = '';
+            document.getElementById('spendSecret').value = '';
+            document.getElementById('spendPubkey').value = '';
+            document.getElementById('destinationAddress').value = '';
+            document.getElementById('destinationAddress').disabled = false;
+            document.getElementById('useSameAddress').checked = false;
+            document.getElementById('sendAmount').value = '';
+
+            // Clear all result displays
+            document.getElementById('utxoList').innerHTML = '';
+            document.getElementById('fetchResult').innerHTML = '';
+            document.getElementById('buildResult').innerHTML = '';
+            document.getElementById('broadcastResult').innerHTML = '';
+
+            // Reset to step 1
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById('step1').classList.add('active');
+
+            alert('✅ All data cleared from memory');
+            console.log('All sensitive data cleared');
+        };
+
+        // Clear sensitive data when page is closed/refreshed
+        window.addEventListener('beforeunload', function() {
+            if (window.appState.keys) {
+                // Overwrite keys with zeros before garbage collection
+                if (window.appState.keys.scanSecret) {
+                    window.appState.keys.scanSecret = '0'.repeat(64);
+                }
+                if (window.appState.keys.spendSecret) {
+                    window.appState.keys.spendSecret = '0'.repeat(64);
+                }
+                window.appState.keys = null;
+            }
+            console.log('Page closing - sensitive data cleared');
+        });
+
+        // Show/hide password functionality
+        document.getElementById('showScanSecret').addEventListener('change', (e) => {
+            const input = document.getElementById('scanSecret');
+            input.type = e.target.checked ? 'text' : 'password';
+        });
+
+        document.getElementById('showSpendSecret').addEventListener('change', (e) => {
+            const input = document.getElementById('spendSecret');
+            input.type = e.target.checked ? 'text' : 'password';
+        });
+
+        window.saveKeys = async function() {
+            const stealthAddress = document.getElementById('stealthAddress').value.trim();
+            let scanSecret = document.getElementById('scanSecret').value.trim();
+            let spendSecret = document.getElementById('spendSecret').value.trim();
+            let spendPubkey = document.getElementById('spendPubkey').value.trim();
+
+            // Auto-convert WIF if needed
+            if (isWifFormat(scanSecret)) {
+                try {
+                    scanSecret = await wifToHex(scanSecret);
+                    document.getElementById('scanSecret').value = scanSecret;
+                } catch (error) {
+                    alert('Failed to convert scan secret from WIF: ' + error.message);
+                    return;
+                }
+            }
+
+            if (isWifFormat(spendSecret)) {
+                try {
+                    spendSecret = await wifToHex(spendSecret);
+                    document.getElementById('spendSecret').value = spendSecret;
+                } catch (error) {
+                    alert('Failed to convert spend secret from WIF: ' + error.message);
+                    return;
+                }
+            }
+
+            // Validation
+            if (!stealthAddress.startsWith('sv1')) {
+                alert('Invalid stealth address. Must start with sv1');
+                return;
+            }
+
+            if (scanSecret.length !== 64 || !/^[0-9a-fA-F]+$/.test(scanSecret)) {
+                alert('Scan secret must be 64 hex characters (or valid WIF)');
+                return;
+            }
+
+            if (spendSecret.length !== 64 || !/^[0-9a-fA-F]+$/.test(spendSecret)) {
+                alert('Spend secret must be 64 hex characters (or valid WIF)');
+                return;
+            }
+
+            // Auto-compute or validate spend public key
+            try {
+                if (!window.VeilWasm) {
+                    alert('VeilWasm library not loaded. Please refresh the page.');
+                    return;
+                }
+
+                await VeilWasm.initWasm();
+
+                const spendSecretBytes = VeilWasm.hexToBytes(spendSecret);
+                const computedPubkeyBytes = VeilWasm.derivePublicKey(spendSecretBytes);
+                const computedPubkeyHex = VeilWasm.bytesToHex(computedPubkeyBytes);
+
+                if (!spendPubkey) {
+                    // Auto-compute if not provided
+                    spendPubkey = computedPubkeyHex;
+                    document.getElementById('spendPubkey').value = spendPubkey;
+                    console.log('Auto-computed spend public key:', spendPubkey);
+                } else {
+                    // Validate if provided
+                    if (spendPubkey.length !== 66 || !/^[0-9a-fA-F]+$/.test(spendPubkey)) {
+                        alert('Spend public key must be 66 hex characters');
+                        return;
+                    }
+
+                    if (computedPubkeyHex.toLowerCase() !== spendPubkey.toLowerCase()) {
+                        const useComputed = confirm(
+                            `⚠️ Spend public key doesn't match spend secret!\n\n` +
+                            `Provided:  ${spendPubkey}\n` +
+                            `Expected:  ${computedPubkeyHex}\n\n` +
+                            `Use the correct (computed) value?`
+                        );
+
+                        if (useComputed) {
+                            spendPubkey = computedPubkeyHex;
+                            document.getElementById('spendPubkey').value = spendPubkey;
+                        } else {
+                            return;
+                        }
+                    }
+                }
+            } catch (error) {
+                alert('Error validating keys: ' + error.message);
+                return;
+            }
+
+            // Save keys
+            window.appState.keys = {
+                stealthAddress,
+                scanSecret,
+                spendSecret,
+                spendPubkey,
+            };
+
+            // Hide keys after saving
+            document.getElementById('scanSecret').type = 'password';
+            document.getElementById('spendSecret').type = 'password';
+            document.getElementById('showScanSecret').checked = false;
+            document.getElementById('showSpendSecret').checked = false;
+
+            // Unlock step 2
+            document.getElementById('step2-locked').classList.add('hidden');
+            document.getElementById('step2-content').classList.remove('hidden');
+            document.getElementById('step2').classList.add('active');
+
+            alert('✅ Keys saved securely in browser memory');
+        };
+
+        window.fetchUTXOs = async function() {
+            if (!window.VeilWasm) {
+                alert('VeilWasm library not loaded. Make sure veil-wasm.bundle.js is loaded.');
+                return;
+            }
+
+            document.getElementById('fetchLoading').classList.remove('hidden');
+            document.getElementById('fetchResult').innerHTML = '';
+
+            try {
+                const keys = window.appState.keys;
+                const rpcUrl = document.getElementById('rpcUrl').value.trim();
+
+                // Set RPC URL
+                VeilWasm.RpcRequester.NODE_URL = rpcUrl;
+
+                // Initialize WASM (specify path for hosted version)
+                console.log('Initializing WASM...');
+                const wasmPath = './veil_wasm_bg.wasm';  // Path relative to HTML file
+                await VeilWasm.initWasm(wasmPath);
+
+                // Fetch transactions from API
+                console.log('Fetching transactions from API...');
+                const txResult = await VeilWasm.RpcRequester.getWatchOnlyTxes(keys.scanSecret, 0);
+
+                if (!txResult || !txResult.anon || txResult.anon.length === 0) {
+                    document.getElementById('fetchLoading').classList.add('hidden');
+                    document.getElementById('fetchResult').innerHTML = `
+                        <div class="info-box warning">
+                            ℹ️ No RingCT transactions found for this address
+                        </div>
+                    `;
+                    window.appState.utxos = [];
+                    updateBalanceDisplay();
+                    updateUTXOList();
+                    return;
+                }
+
+                console.log(`Found ${txResult.anon.length} RingCT transaction(s)`);
+
+                // Parse transactions
+                const rawTxs = txResult.anon.map(tx => tx.raw);
+                const txMetadata = txResult.anon.map(tx => ({
+                    amount: tx.amount,
+                    blind: tx.blind,
+                }));
+
+                const spendSecret = VeilWasm.hexToBytes(keys.spendSecret);
+                const scanSecret = VeilWasm.hexToBytes(keys.scanSecret);
+
+                console.log('Parsing transactions...');
+                const parsedOutputs = await VeilWasm.parseWatchOnlyTransactions(
+                    rawTxs,
+                    spendSecret,
+                    scanSecret,
+                    txMetadata
+                );
+
+                console.log(`Parsed ${parsedOutputs.length} output(s)`);
+
+                // Check spent status
+                console.log('Checking spent status...');
+                const keyImages = parsedOutputs.map(output => output.keyImage);
+                const spentStatuses = await VeilWasm.RpcRequester.checkKeyImages(keyImages);
+
+                // Build UTXO list
+                window.appState.utxos = parsedOutputs.map((output, idx) => ({
+                    txid: output.txid || '',
+                    vout: output.vout || 0,
+                    amount: output.amount,
+                    commitment: output.commitment,
+                    blind: output.blind,
+                    pubkey: output.pubkey,
+                    ephemeralPubkey: output.ephemeralPubkey,
+                    keyImage: output.keyImage,
+                    ringctIndex: output.ringctIndex,
+                    spent: spentStatuses[idx].spent,
+                    spentInMempool: spentStatuses[idx].spentinmempool,
+                    spentTxid: spentStatuses[idx].txid,
+                }));
+
+                document.getElementById('fetchLoading').classList.add('hidden');
+                document.getElementById('fetchResult').innerHTML = `
+                    <div class="info-box success">
+                        ✅ Fetched ${window.appState.utxos.length} UTXO(s) from blockchain
+                    </div>
+                `;
+
+                // Unlock step 3
+                updateBalanceDisplay();
+                updateUTXOList();
+                document.getElementById('step3-locked').classList.add('hidden');
+                document.getElementById('step3-content').classList.remove('hidden');
+                document.getElementById('step3').classList.add('active');
+
+                // Unlock step 4
+                document.getElementById('step4-locked').classList.add('hidden');
+                document.getElementById('step4-content').classList.remove('hidden');
+                document.getElementById('step4').classList.add('active');
+
+            } catch (error) {
+                console.error('Error fetching UTXOs:', error);
+                document.getElementById('fetchLoading').classList.add('hidden');
+                document.getElementById('fetchResult').innerHTML = `
+                    <div class="info-box error">
+                        ❌ Error fetching UTXOs: ${error.message}
+                        <pre>${error.stack || ''}</pre>
+                    </div>
+                `;
+            }
+        };
+
+        window.updateBalanceDisplay = function() {
+            const unspent = window.appState.utxos.filter(u => !u.spent);
+            const spent = window.appState.utxos.filter(u => u.spent);
+
+            const totalBalance = unspent.reduce((sum, u) => sum + u.amount, BigInt(0));
+            const spentBalance = spent.reduce((sum, u) => sum + u.amount, BigInt(0));
+
+            document.getElementById('totalBalance').textContent = satoshisToVeil(totalBalance) + ' VEIL';
+            document.getElementById('totalBalanceSats').textContent = `(${totalBalance} satoshis)`;
+            document.getElementById('spentBalance').textContent = satoshisToVeil(spentBalance) + ' VEIL';
+            document.getElementById('spentBalanceSats').textContent = `(${spentBalance} satoshis)`;
+        };
+
+        window.updateUTXOList = function() {
+            const container = document.getElementById('utxoList');
+            container.innerHTML = '';
+
+            if (window.appState.utxos.length === 0) {
+                container.innerHTML = '<div class="info-box info">No UTXOs found</div>';
+                return;
+            }
+
+            window.appState.utxos.forEach((utxo, index) => {
+                const div = document.createElement('div');
+                div.className = 'utxo-item' + (utxo.spent ? ' spent' : '');
+                div.dataset.index = index;
+                div.onclick = () => toggleUTXOSelection(index);
+
+                const status = utxo.spent
+                    ? '<span class="utxo-status spent">🔴 SPENT</span>'
+                    : '<span class="utxo-status unspent">🟢 UNSPENT</span>';
+
+                let html = `
+                    <div><strong>[${index}]</strong> ${status}</div>
+                    <div style="margin-top: 5px;">TXID: ${utxo.txid}</div>
+                    <div>Vout: ${utxo.vout} | Amount: ${satoshisToVeil(utxo.amount)} VEIL (${utxo.amount} satoshis)</div>
+                    <div>RingCT Index: ${utxo.ringctIndex || 'N/A'}</div>
+                `;
+
+                if (utxo.spent && utxo.spentTxid) {
+                    html += `<div style="margin-top: 3px; font-size: 12px; color: #721c24;">Spent in TX: ${utxo.spentTxid.slice(0, 16)}...${utxo.spentTxid.slice(-8)}</div>`;
+                }
+
+                if (utxo.keyImage) {
+                    const kiHex = typeof utxo.keyImage === 'string'
+                        ? utxo.keyImage
+                        : window.VeilWasm?.bytesToHex(utxo.keyImage) || '';
+                    html += `<div style="margin-top: 3px; font-size: 11px; color: #666;">Key Image: ${kiHex.slice(0, 20)}...</div>`;
+                }
+
+                div.innerHTML = html;
+                container.appendChild(div);
+            });
+        };
+
+        window.toggleUTXOSelection = function(index) {
+            const utxo = window.appState.utxos[index];
+
+            const selectedIndex = window.appState.selectedUTXOs.indexOf(index);
+            if (selectedIndex > -1) {
+                window.appState.selectedUTXOs.splice(selectedIndex, 1);
+            } else {
+                window.appState.selectedUTXOs.push(index);
+            }
+
+            updateSelectionDisplay();
+        };
+
+        window.updateSelectionDisplay = function() {
+            // Update visual selection
+            document.querySelectorAll('.utxo-item').forEach((item, index) => {
+                if (window.appState.selectedUTXOs.includes(index)) {
+                    item.classList.add('selected');
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+
+            // Update selection summary
+            const selected = window.appState.selectedUTXOs.map(i => window.appState.utxos[i]);
+            const total = selected.reduce((sum, u) => sum + u.amount, BigInt(0));
+            const spentCount = selected.filter(u => u.spent).length;
+
+            document.getElementById('selectedCount').textContent = selected.length;
+            document.getElementById('selectedAmount').textContent = satoshisToVeil(total);
+
+            // Show warning if spent UTXOs are selected
+            const warningEl = document.getElementById('spentWarning');
+            if (spentCount > 0) {
+                document.getElementById('spentCount').textContent = spentCount;
+                warningEl.classList.remove('hidden');
+                warningEl.style.display = 'block';
+            } else {
+                warningEl.classList.add('hidden');
+                warningEl.style.display = 'none';
+            }
+        };
+
+        window.selectAllUnspent = function() {
+            window.appState.selectedUTXOs = window.appState.utxos
+                .map((u, i) => ({ u, i }))
+                .filter(({ u }) => !u.spent)
+                .map(({ i }) => i);
+            updateSelectionDisplay();
+        };
+
+        window.selectAllUTXOs = function() {
+            window.appState.selectedUTXOs = window.appState.utxos.map((u, i) => i);
+            updateSelectionDisplay();
+        };
+
+        window.clearSelection = function() {
+            window.appState.selectedUTXOs = [];
+            updateSelectionDisplay();
+        };
+
+        window.setMaxAmount = function() {
+            const selected = window.appState.selectedUTXOs.map(i => window.appState.utxos[i]);
+            const total = selected.reduce((sum, u) => sum + u.amount, BigInt(0));
+            const estimatedFee = BigInt('100000'); // 0.001 VEIL
+            const maxAmount = total - estimatedFee;
+
+            if (maxAmount <= 0n) {
+                alert('Insufficient funds to cover fee');
+                return;
+            }
+
+            document.getElementById('sendAmount').value = satoshisToVeil(maxAmount);
+        };
+
+        window.toggleSameAddress = function() {
+            const checkbox = document.getElementById('useSameAddress');
+            const destinationInput = document.getElementById('destinationAddress');
+
+            if (checkbox.checked) {
+                // Use the stealth address from Step 1
+                if (window.appState.keys && window.appState.keys.stealthAddress) {
+                    destinationInput.value = window.appState.keys.stealthAddress;
+                    destinationInput.disabled = true;
+                } else {
+                    alert('Please save your keys in Step 1 first');
+                    checkbox.checked = false;
+                }
+            } else {
+                // Allow manual entry
+                destinationInput.disabled = false;
+                destinationInput.value = '';
+            }
+        };
+
+        window.buildTransaction = async function() {
+            const destinationAddress = document.getElementById('destinationAddress').value.trim();
+            const sendAmount = document.getElementById('sendAmount').value.trim();
+            const ringSize = parseInt(document.getElementById('ringSize').value);
+
+            // Validation
+            if (window.appState.selectedUTXOs.length === 0) {
+                alert('Please select at least one UTXO');
+                return;
+            }
+
+            if (!destinationAddress.startsWith('sv1')) {
+                alert('Invalid destination address. Must start with sv1');
+                return;
+            }
+
+            if (!sendAmount || parseFloat(sendAmount) <= 0) {
+                alert('Please enter a valid send amount');
+                return;
+            }
+
+            document.getElementById('buildLoading').classList.remove('hidden');
+
+            const buildResultDiv = document.getElementById('buildResult');
+            buildResultDiv.classList.add('hidden');
+            buildResultDiv.innerHTML = '';
+
+            try {
+                const keys = window.appState.keys;
+                const spendSecret = VeilWasm.hexToBytes(keys.spendSecret);
+                const scanSecret = VeilWasm.hexToBytes(keys.scanSecret);
+                const amount = veilToSatoshis(sendAmount);
+
+                // Get selected UTXOs
+                const selectedUTXOs = window.appState.selectedUTXOs.map(idx => {
+                    const utxo = window.appState.utxos[idx];
+                    return {
+                        txid: utxo.txid,
+                        vout: utxo.vout,
+                        amount: utxo.amount,
+                        commitment: utxo.commitment,
+                        blind: utxo.blind,
+                        pubkey: utxo.pubkey,
+                        ephemeralPubkey: utxo.ephemeralPubkey,
+                        blockHeight: 0,
+                        spendable: !utxo.spent,
+                        ringctIndex: utxo.ringctIndex,
+                    };
+                });
+
+                console.log('Fetching decoys...');
+                const decoys = await VeilWasm.fetchDecoyOutputs(ringSize, selectedUTXOs.length);
+                console.log(`Fetched ${decoys.length} decoy outputs`);
+
+                console.log('Building transaction...');
+                const builder = new VeilWasm.TransactionBuilder({
+                    ringSize,
+                    feePerKb: 10000,
+                    subtractFeeFromOutputs: false,
+                });
+
+                await builder.initialize();
+
+                const result = await builder.buildTransaction(
+                    spendSecret,
+                    scanSecret,
+                    [{ address: destinationAddress, amount }],
+                    selectedUTXOs,
+                    decoys
+                );
+
+                window.appState.builtTransaction = result;
+
+                document.getElementById('buildLoading').classList.add('hidden');
+
+                const buildResultDiv = document.getElementById('buildResult');
+                buildResultDiv.classList.remove('hidden');
+                buildResultDiv.innerHTML = `
+                    <div class="info-box success">
+                        <strong style="font-size: 16px;">✅ Transaction Built and Ready to Broadcast!</strong>
+                    </div>
+                    <div class="tx-details">
+                        <h4>Transaction Hash</h4>
+                        <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 15px;">
+                            <code style="word-break: break-all; font-size: 13px; color: #2d3748;">${result.txid}</code>
+                            <button onclick="navigator.clipboard.writeText('${result.txid}'); alert('✅ TX Hash copied!');"
+                                    style="margin-top: 8px; padding: 6px 12px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">
+                                Copy TX Hash
+                            </button>
+                        </div>
+
+                        <h4>Details</h4>
+                        <div class="tx-detail-row">
+                            <span class="tx-detail-label">Size:</span>
+                            <span class="tx-detail-value">${result.size} bytes</span>
+                        </div>
+                        <div class="tx-detail-row">
+                            <span class="tx-detail-label">Fee:</span>
+                            <span class="tx-detail-value">${satoshisToVeil(result.fee)} VEIL</span>
+                        </div>
+                        <div class="tx-detail-row">
+                            <span class="tx-detail-label">Change:</span>
+                            <span class="tx-detail-value">${satoshisToVeil(result.change)} VEIL</span>
+                        </div>
+                        <div class="tx-detail-row">
+                            <span class="tx-detail-label">Inputs Used:</span>
+                            <span class="tx-detail-value">${result.inputs.length}</span>
+                        </div>
+                    </div>
+                `;
+
+                // Unlock step 5
+                document.getElementById('step5-locked').classList.add('hidden');
+                document.getElementById('step5-content').classList.remove('hidden');
+                document.getElementById('step5').classList.add('active');
+
+            } catch (error) {
+                console.error('Error building transaction:', error);
+                document.getElementById('buildLoading').classList.add('hidden');
+
+                const buildResultDiv = document.getElementById('buildResult');
+                buildResultDiv.classList.remove('hidden');
+                buildResultDiv.innerHTML = `
+                    <div class="info-box error">
+                        ❌ Error building transaction: ${error.message}
+                        <pre>${error.stack || ''}</pre>
+                    </div>
+                `;
+            }
+        };
+
+        window.broadcastTransaction = async function() {
+            if (!window.appState.builtTransaction) {
+                alert('No transaction to broadcast. Build a transaction first.');
+                return;
+            }
+
+            if (!confirm('Are you sure you want to broadcast this transaction to the network?')) {
+                return;
+            }
+
+            document.getElementById('broadcastLoading').classList.remove('hidden');
+
+            const broadcastResultDiv = document.getElementById('broadcastResult');
+            broadcastResultDiv.classList.add('hidden');
+            broadcastResultDiv.innerHTML = '';
+
+            try {
+                const txHex = window.appState.builtTransaction.txHex;
+
+                console.log('Broadcasting transaction...');
+                const result = await VeilWasm.RpcRequester.sendRawTransaction(txHex);
+
+                // Handle both string response and object response
+                const txid = typeof result === 'string' ? result : result.result || result;
+
+                console.log('Broadcast result:', result);
+                console.log('Transaction ID:', txid);
+
+                document.getElementById('broadcastLoading').classList.add('hidden');
+
+                const broadcastResultDiv = document.getElementById('broadcastResult');
+                broadcastResultDiv.classList.remove('hidden');
+                broadcastResultDiv.innerHTML = `
+                    <div class="info-box success">
+                        ✅ Transaction broadcast successfully!
+                        <div style="margin-top: 10px;">
+                            <strong>Transaction ID:</strong><br>
+                            <code style="word-break: break-all;">${txid}</code>
+                        </div>
+                        <div style="margin-top: 10px;">
+                            <a href="https://explorer.veil.zelcore.io/tx/${txid}" target="_blank" style="color: #667eea;">
+                                View on Explorer →
+                            </a>
+                        </div>
+                    </div>
+                `;
+
+            } catch (error) {
+                console.error('Broadcast error:', error);
+                console.error('Error details:', {
+                    message: error.message,
+                    stack: error.stack,
+                    error: error
+                });
+
+                document.getElementById('broadcastLoading').classList.add('hidden');
+
+                // Extract error code if it exists
+                const errorCode = error.code !== undefined ? error.code : null;
+                const errorCodeDisplay = errorCode !== null ? `<strong>Error Code:</strong> ${errorCode}<br><br>` : '';
+
+                let diagnostics = '';
+                if (error.message.includes('msg verify message') || error.message.includes('verify-message')) {
+                    diagnostics = `
+                        <div class="info-box warning" style="margin-top: 15px;">
+                            <strong>🔍 Diagnosis: Message Verification Failed</strong><br><br>
+                            This is a SIGNATURE ERROR - the MLSAG signature is invalid.<br><br>
+                            Possible causes:<br>
+                            • Incorrect key image generation<br>
+                            • Wrong secret keys being used<br>
+                            • Invalid ring construction<br>
+                            • MLSAG signature computation error
+                        </div>
+                    `;
+                } else if (error.message.includes('missing') && error.message.includes('spent')) {
+                    diagnostics = `
+                        <div class="info-box warning" style="margin-top: 15px;">
+                            <strong>🔍 Diagnosis: Inputs Missing or Spent</strong><br><br>
+                            The UTXOs are ALREADY SPENT on the blockchain.<br><br>
+                            Resolution:<br>
+                            • Go back to Step 2 and fetch fresh UTXOs<br>
+                            • Select different (unspent) UTXOs
+                        </div>
+                    `;
+                } else if (error.message.includes('dup-keyimage')) {
+                    diagnostics = `
+                        <div class="info-box warning" style="margin-top: 15px;">
+                            <strong>🔍 Diagnosis: Duplicate Key Images</strong><br><br>
+                            This error means you're trying to spend the same UTXO multiple times in one transaction.<br><br>
+                            Resolution:<br>
+                            • Check if you selected the same UTXO twice (unlikely with this UI)<br>
+                            • The UTXO may already be spent - refresh UTXOs in Step 2<br>
+                            • You may have already broadcast this transaction
+                        </div>
+                    `;
+                } else if (error.message.includes('bad-anonin') || error.message.includes('keyimage')) {
+                    diagnostics = `
+                        <div class="info-box warning" style="margin-top: 15px;">
+                            <strong>🔍 Diagnosis: Invalid Anonymous Input / Key Image</strong><br><br>
+                            Possible causes:<br>
+                            • Key image already exists in blockchain (UTXO is spent)<br>
+                            • Invalid ring signature<br>
+                            • Incorrect key derivation<br><br>
+                            Resolution:<br>
+                            • Go back to Step 2 and fetch fresh UTXOs<br>
+                            • Make sure you're using the correct private keys
+                        </div>
+                    `;
+                }
+
+                // Show full error details
+                const errorDetails = error.stack ? `
+                    <details style="margin-top: 10px;">
+                        <summary style="cursor: pointer; color: #666;">Show technical details</summary>
+                        <pre style="font-size: 11px; margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px; overflow-x: auto;">${error.stack}</pre>
+                    </details>
+                ` : '';
+
+                const broadcastResultDiv = document.getElementById('broadcastResult');
+                broadcastResultDiv.classList.remove('hidden');
+                broadcastResultDiv.innerHTML = `
+                    <div class="info-box error">
+                        <strong style="font-size: 16px;">❌ Broadcast Failed</strong><br><br>
+                        ${errorCodeDisplay}
+                        <strong>Error:</strong> ${error.message}
+                        ${errorDetails}
+                    </div>
+                    ${diagnostics}
+                `;
+            }
+        };
+
+        window.copyTxHex = function() {
+            if (!window.appState.builtTransaction) {
+                alert('No transaction to copy');
+                return;
+            }
+
+            navigator.clipboard.writeText(window.appState.builtTransaction.txHex);
+            alert('✅ Transaction hex copied to clipboard');
+        };
+
+        // Utility functions
+        window.satoshisToVeil = function(satoshis) {
+            return (Number(satoshis) / 100000000).toFixed(8);
+        };
+
+        window.veilToSatoshis = function(veil) {
+            return BigInt(Math.floor(parseFloat(veil) * 100000000));
+        };
+    </script>
+</body>
+</html>

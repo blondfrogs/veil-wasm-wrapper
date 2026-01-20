@@ -93,7 +93,7 @@ interface RPCResponse<T = any> {
 /**
  * Handles all blockchain RPC communication
  *
- * Default configuration connects to Veil's public explorer API.
+ * Default configuration connects to Veil's Zelcore API.
  * Can be reconfigured for custom nodes:
  *
  * @example
@@ -116,14 +116,14 @@ interface RPCResponse<T = any> {
 export class RpcRequester {
   /**
    * RPC endpoint URL
-   * Default: Veil's public explorer API
+   * Default: Veil's Zelcore API
    * Can be configured via:
    * 1. Environment variable: VEIL_NODE_URL
    * 2. Direct assignment: RpcRequester.NODE_URL = 'http://localhost:58810'
    */
   static NODE_URL =
     (typeof process !== 'undefined' && process.env?.VEIL_NODE_URL) ||
-    'https://explorer-api.veil-project.com';
+    'https://api.veil.zelcore.io';
 
   /**
    * RPC authentication password (optional)
@@ -203,9 +203,13 @@ export class RpcRequester {
       const rpcResponse: RPCResponse<T> = await response.json();
 
       if (rpcResponse.error) {
-        throw new Error(
+        const error = new Error(
           `RPC Error ${rpcResponse.error.code}: ${rpcResponse.error.message}`
         );
+        // Attach error code and data for better error handling
+        (error as any).code = rpcResponse.error.code;
+        (error as any).data = rpcResponse.error.data;
+        throw error;
       }
 
       if (rpcResponse.result === undefined) {

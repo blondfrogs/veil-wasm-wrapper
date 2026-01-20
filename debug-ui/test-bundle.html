@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Veil Bundle Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .test-section {
+            background: #2d2d2d;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #007acc;
+        }
+        .success { border-left-color: #4ec9b0; }
+        .error { border-left-color: #f48771; }
+        button {
+            background: #007acc;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+        button:hover { background: #005a9e; }
+        pre {
+            background: #1e1e1e;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Veil WASM Bundle Test</h1>
+
+    <div class="test-section">
+        <h3>Test 1: Check if bundle loads</h3>
+        <div id="test1-result">⏳ Waiting...</div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test 2: Initialize WASM</h3>
+        <button onclick="runTest2()">Run Test 2</button>
+        <div id="test2-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test 3: Test key derivation</h3>
+        <button onclick="runTest3()">Run Test 3</button>
+        <div id="test3-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Test 4: Test RPC connection</h3>
+        <button onclick="runTest4()">Run Test 4</button>
+        <div id="test4-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>Console Output</h3>
+        <pre id="console-output">Open browser DevTools (F12) to see detailed logs...</pre>
+    </div>
+
+    <!-- Load the bundled library -->
+    <script src="veil-wasm.bundle.js"></script>
+
+    <script>
+        // Test 1: Check if library loaded
+        function test1() {
+            const result = document.getElementById('test1-result');
+
+            if (typeof VeilWasm !== 'undefined') {
+                result.innerHTML = '✅ SUCCESS: VeilWasm object is available';
+                result.parentElement.classList.add('success');
+
+                console.log('Available functions:', Object.keys(VeilWasm));
+
+                // List key functions
+                const funcs = [
+                    'initWasm',
+                    'RpcRequester',
+                    'TransactionBuilder',
+                    'hexToBytes',
+                    'bytesToHex',
+                    'parseWatchOnlyTransactions'
+                ];
+
+                const available = funcs.filter(f => typeof VeilWasm[f] !== 'undefined');
+                result.innerHTML += `<br>Found ${available.length}/${funcs.length} expected functions`;
+                result.innerHTML += `<pre>${available.join('\n')}</pre>`;
+            } else {
+                result.innerHTML = '❌ ERROR: VeilWasm not found';
+                result.parentElement.classList.add('error');
+            }
+        }
+
+        // Test 2: Initialize WASM
+        async function runTest2() {
+            const result = document.getElementById('test2-result');
+            result.innerHTML = '⏳ Initializing WASM...';
+
+            try {
+                await VeilWasm.initWasm();
+                result.innerHTML = '✅ SUCCESS: WASM initialized';
+                result.parentElement.classList.add('success');
+                console.log('WASM initialized successfully');
+            } catch (error) {
+                result.innerHTML = `❌ ERROR: ${error.message}`;
+                result.parentElement.classList.add('error');
+                console.error('WASM init error:', error);
+            }
+        }
+
+        // Test 3: Test utility functions
+        async function runTest3() {
+            const result = document.getElementById('test3-result');
+            result.innerHTML = '⏳ Testing utility functions...';
+
+            try {
+                // Test hex conversion
+                const testHex = '0191255dba29f77618320ba270561552f3248ace2cd23d5f4c2e776a6f4fa95c';
+                const bytes = VeilWasm.hexToBytes(testHex);
+                const hexBack = VeilWasm.bytesToHex(bytes);
+
+                if (hexBack === testHex) {
+                    result.innerHTML = '✅ SUCCESS: Hex conversion works<br>';
+                    result.innerHTML += `Input: ${testHex.slice(0, 20)}...<br>`;
+                    result.innerHTML += `Bytes length: ${bytes.length}<br>`;
+                    result.innerHTML += `Output: ${hexBack.slice(0, 20)}...`;
+                    result.parentElement.classList.add('success');
+                } else {
+                    throw new Error('Hex conversion mismatch');
+                }
+
+                console.log('Utility test passed');
+            } catch (error) {
+                result.innerHTML = `❌ ERROR: ${error.message}`;
+                result.parentElement.classList.add('error');
+                console.error('Utility test error:', error);
+            }
+        }
+
+        // Test 4: Test RPC connection
+        async function runTest4() {
+            const result = document.getElementById('test4-result');
+            result.innerHTML = '⏳ Testing RPC connection...';
+
+            try {
+                const info = await VeilWasm.RpcRequester.getBlockchainInfo();
+
+                result.innerHTML = '✅ SUCCESS: RPC connected<br>';
+                result.innerHTML += `<pre>${JSON.stringify(info, null, 2)}</pre>`;
+                result.parentElement.classList.add('success');
+                console.log('RPC test passed:', info);
+            } catch (error) {
+                result.innerHTML = `❌ ERROR: ${error.message}`;
+                result.parentElement.classList.add('error');
+                console.error('RPC test error:', error);
+            }
+        }
+
+        // Run test 1 on load
+        window.addEventListener('load', () => {
+            setTimeout(test1, 100);
+        });
+
+        // Capture console output
+        const originalLog = console.log;
+        const consoleOutput = document.getElementById('console-output');
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            const text = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 2) : a).join(' ');
+            consoleOutput.textContent += text + '\n';
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        };
+    </script>
+</body>
+</html>

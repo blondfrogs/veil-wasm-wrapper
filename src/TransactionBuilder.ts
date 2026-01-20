@@ -630,12 +630,11 @@ export class TransactionBuilder {
     targetAmount: bigint,
     feePerKb: number
   ): CoinSelectionResult {
-    // Sort UTXOs by value (largest first for simplicity)
-    const sorted = [...utxos].sort((a, b) => {
-      if (a.amount > b.amount) return -1;
-      if (a.amount < b.amount) return 1;
-      return 0;
-    });
+    // IMPORTANT: Shuffle UTXOs randomly (matches Veil Core behavior)
+    // See: veil/src/veil/ringct/anonwallet.cpp:6455
+    // Veil Core uses: Shuffle(vCoins.begin(), vCoins.end(), FastRandomContext());
+    // This improves privacy by making coin selection unpredictable
+    const shuffled = shuffleArray([...utxos]);
 
     const selected: UTXO[] = [];
     let totalValue = 0n;
@@ -651,7 +650,7 @@ export class TransactionBuilder {
     };
 
     // Select UTXOs until we have enough (up to MAX_ANON_INPUTS limit)
-    for (const utxo of sorted) {
+    for (const utxo of shuffled) {
       // Enforce consensus limit: maximum 32 inputs per transaction
       if (selected.length >= MAX_ANON_INPUTS) {
         // Check if we have enough with the inputs we've selected
@@ -696,8 +695,13 @@ export class TransactionBuilder {
       }
     }
 
+    // Calculate what we actually need (including fee)
+    const finalTxSize = estimateSize(selected.length, 2);
+    const finalEstimatedFee = BigInt(Math.ceil((finalTxSize / 1000) * feePerKb));
+    const totalNeeded = targetAmount + finalEstimatedFee;
+
     throw new Error(
-      `Insufficient funds: need ${targetAmount}, have ${totalValue}`
+      `Insufficient funds: need ${totalNeeded} (${targetAmount} + ${finalEstimatedFee} fee), have ${totalValue}`
     );
   }
 
